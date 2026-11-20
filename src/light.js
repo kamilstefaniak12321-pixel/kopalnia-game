@@ -3,16 +3,18 @@
 // "rozlewa się" po pustych polach, słabnąc o 1 na blok - więc
 // nie przechodzi przez ściany, ale skręca za róg korytarza.
 // ------------------------------------------------------------
-import { TORCH, isSolid } from './blocks.js';
+import { TORCH, MUSHROOM, isSolid } from './blocks.js';
 
 export const TORCH_LIGHT = 14;
+// Co świeci i jak mocno.
+export const SOURCES = { [TORCH]: TORCH_LIGHT, [MUSHROOM]: 10 };
 
-// Liczy światło od zera dla całego świata; zwraca liczbę pochodni.
+// Liczy światło od zera dla całego świata; zwraca liczbę źródeł światła.
 export function computeLight(world) {
     const { w, h, d, data, light } = world;
     const layer = w * d, queue = [];
     light.fill(0);
-    for (let i = 0; i < data.length; i++) if (data[i] === TORCH) { light[i] = TORCH_LIGHT; queue.push(i); }
+    for (let i = 0; i < data.length; i++) { const moc = SOURCES[data[i]]; if (moc) { light[i] = moc; queue.push(i); } }
     const torches = queue.length;
     for (let head = 0; head < queue.length; head++) {
         const i = queue[head], l = light[i] - 1;

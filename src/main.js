@@ -3,9 +3,11 @@
 // ------------------------------------------------------------
 import * as THREE from '../lib/three/three.module.js';
 import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT, WORLD_X, WORLD_Z } from './config.js';
-import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
+import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, MUSHROOM, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
 import { MINES, charakter } from './mines.js';
-import { MINERALY, RODZAJE } from './minerals.js';
+import { MINERALY, RODZAJE, PRODUKTY } from './minerals.js';
+import { OSIAGNIECIA, RZADKOSCI, sprawdzOsiagniecia, przyznaj } from './achievements.js';
+import { createParticles } from './particles.js';
 import { generateMine, applyChanges } from './mine.js';
 import { computeLight } from './light.js';
 import { shaken, pulled, landingY, isHanging } from './cavein.js';
@@ -70,9 +72,12 @@ function tileCanvas(buf) {
 }
 const atlasCanvas = document.createElement('canvas');
 atlasCanvas.width = atlasCanvas.height = TILE * ATLAS_TILES;
-const ikony = {};
+const ikony = {}, kolory = {};      // kolory: średni kolor tekstury (do odłamków)
 TILE_NAMES.forEach((n, i) => {
-    const c = tileCanvas(makeTile(n));
+    const buf = makeTile(n), suma = [0, 0, 0, 0];
+    for (let j = 0; j < buf.length; j += 4) if (buf[j + 3]) { suma[0] += buf[j]; suma[1] += buf[j + 1]; suma[2] += buf[j + 2]; suma[3]++; }
+    kolory[n] = suma.slice(0, 3).map(v => v / suma[3] / 255);
+    const c = tileCanvas(buf);
     atlasCanvas.getContext('2d').drawImage(c, (i % ATLAS_TILES) * TILE, Math.floor(i / ATLAS_TILES) * TILE);
     ikony[n] = c.toDataURL();
 });
@@ -90,7 +95,8 @@ function poswiataPochodni(shader) {
         .replace('void main() {', 'attribute float swiatlo;\nvarying float vSwiatlo;\nvoid main() {\n\tvSwiatlo = swiatlo;');
     shader.fragmentShader = shader.fragmentShader
         .replace('void main() {', 'varying float vSwiatlo;\nvoid main() {')
-        .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * vSwiatlo * vec3(1.0, 0.74, 0.46) * 0.6;\n#include <opaque_fragment>');
+        // powyżej 1 = rzecz świeci sama (płomień, grzyb): własny kolor, bez ciepłego zabarwienia
+        .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * (vSwiatlo > 1.0 ? vec3(vSwiatlo * 0.8) : vSwiatlo * vec3(1.0, 0.74, 0.46) * 0.6);\n#include <opaque_fragment>');
 }
 material.onBeforeCompile = poswiataPochodni;
 const materialWody = new THREE.MeshLambertMaterial({ color: 0x3f8fd0, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false });
@@ -219,6 +225,52 @@ function ustawPowierzchnie() {
 }
 let okazja = 'powitanie';      // co Bronek powie przy następnym otwarciu skupu
 
+// ---------- Cząsteczki: odłamki, iskry, krople, dym ----------
+const czastki = createParticles();
+scene.add(czastki.mesh);
+const KOLOR_SUROWCA = Object.fromEntries(MINERALY.map(m => [m.id, m.kolor.map(v => v / 255)]));
+function odlamki(x, y, z, id, n) {
+    const skala = kolory[BLOCKS[id].tekstury[1]] || [0.5, 0.5, 0.5];
+    czastki.emit(x + 0.5, y + 0.5, z + 0.5, { n, kolor: skala, obszar: 0.8, rozrzut: 3, vy: 2.5, zycie: 0.7, rozmiar: 0.1 });
+    if (KOLOR_SUROWCA[id]) czastki.emit(x + 0.5, y + 0.5, z + 0.5, { n: Math.ceil(n / 2), kolor: KOLOR_SUROWCA[id], obszar: 0.8, rozrzut: 3, vy: 3, zycie: 0.8, rozmiar: 0.09 });
+}
+// Dym z komina, krople pod zbiornikami wody (zdradzają, że nad stropem
+// jest woda) - wołane co klatkę.
+let dymCzas = 0, kapCzas = 0;
+function zycieSwiata(dt, pod) {
+    if (pod < 1 && (dymCzas += dt) > 0.22) {
+        dymCzas = 0;
+        const k = kopalnia.komin;
+        czastki.emit(k.x, k.y, k.z, { kolor: [0.55, 0.55, 0.57], rozrzut: 0.35, vy: 0.9, grawitacja: -0.5, zycie: 3.2, rozmiar: 0.22, rosnie: true, obszar: 0.3 });
+    }
+    if ((kapCzas += dt) > 0.1) {
+        kapCzas = 0;
+        for (let i = 0; i < 8; i++) {
+            const x = Math.floor(player.pos.x + (Math.random() - 0.5) * 15), y = Math.floor(player.pos.y + Math.random() * 6 - 2), z = Math.floor(player.pos.z + (Math.random() - 0.5) * 15);
+            if (world.get(x, y, z) !== AIR || !world.solid(x, y + 1, z)) continue;
+            if (world.get(x, y + 2, z) !== WATER && world.get(x, y + 3, z) !== WATER && world.get(x, y + 4, z) !== WATER) continue;
+            czastki.emit(x + 0.5, y + 0.97, z + 0.5, { kolor: [0.35, 0.65, 1], rozrzut: 0, vy: 0, grawitacja: 12, zycie: 0.9, rozmiar: 0.08, obszar: 0.8 });
+            if (Math.random() < 0.3) stuk(5, 0.04, 0.02);
+        }
+    }
+}
+
+// ---------- Osiągnięcia ----------
+const kolejkaOsiagniec = [];
+let osiagniecieDo = 0;
+function pokazOsiagniecia(lista) { for (const o of lista) if (o) kolejkaOsiagniec.push(o); }
+function zdobadz(id) { const o = przyznaj(stan, id); if (o) { pokazOsiagniecia([o]); zapisz(); } }
+function osiagnieciaKlatka() {
+    const el = $('osiagniecie'), teraz = performance.now();
+    if (teraz < osiagniecieDo) return;
+    const o = kolejkaOsiagniec.shift();
+    if (!o) { el.classList.remove('widoczne'); return; }
+    el.className = 'widoczne ' + o.rzadkosc;
+    el.innerHTML = `<small>Osiągnięcie · ${RZADKOSCI[o.rzadkosc]}</small><b>${o.nazwa}</b><span>${o.opis}</span>`;
+    osiagniecieDo = teraz + 4200;
+    stuk(2.6, 0.2, 0.12); setTimeout(() => stuk(3.4, 0.2, 0.18), 130);
+}
+
 // ---------- Ramka i pęknięcia na wskazanym bloku ----------
 const ramka = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004)),
@@ -279,6 +331,7 @@ function komunikat(tekst, czas = 1800) {
     if (czas > 1800) waznyDo = komunikatDo;
 }
 function odswiezHud() {
+    pokazOsiagniecia(sprawdzOsiagniecia(stan));
     $('kasa').textContent = stan.kasa + ' monet';
     $('plecak').textContent = `Plecak: ${eko.ileWPlecaku(stan)}/${eko.pojemnosc(stan)}`;
     $('lampa-nazwa').textContent = eko.LAMPY[stan.lampa].nazwa;
@@ -291,7 +344,7 @@ function odswiezHud() {
 
 // ---------- Sklep ----------
 let sklepOtwarty = false;
-let atlasOtwarty = false, kwestiaTeraz = '';
+let atlasOtwarty = false, ksiegaOtwarta = false, kwestiaTeraz = '';
 // Lista surowców z ikonami: [id, liczba] -> kafelki.
 const kafelki = lista => lista.map(([id, n]) => `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('');
 // Składniki przepisu: zielone, gdy są, czerwone, gdy brakuje.
@@ -340,6 +393,12 @@ function rysujSklep() {
         <div class="wiersz"><div><small>Skup nie bierze surowców potrzebnych na następny kilof, lampę i zlecenia — odkłada je do składu.</small></div>
             <button data-sprzedaj ${wart ? '' : 'disabled'}>Sprzedaj wszystko (+${wart})</button></div>
         ${sklad.length ? `<div class="wiersz"><div></div><button data-sklad>Sprzedaj też skład (+${eko.wartoscSkladu(stan)})</button></div>` : ''}
+        <h2>Piec hutniczy</h2>
+        ${PRODUKTY.map(p => { const ile = eko.ileWytopic(stan, p.klucz), mam = eko.ileSurowca(stan, p.id); return `<div class="wiersz"><div class="zlecenie"><img src="${ikony[p.klucz]}"><div><b>${p.nazwa}</b>${mam ? ` · masz ${mam}` : ''}
+            <small>Wart ${p.wartosc} monet za sztukę</small><div class="przepis">Na sztukę: ${przepisHtml(p.z)}</div></div></div>
+            <div class="przyciski"><button data-przetop="${p.klucz}" ${ile ? '' : 'disabled'}>Wytop 1</button>
+            ${ile > 1 ? `<button data-przetop="${p.klucz}" data-ile="${ile}">Wytop ${ile}</button>` : ''}</div></div>`; }).join('')}
+        <p class="maly">Stopy są warte więcej niż surowce, z których powstały, i idą na lepszy sprzęt. Trafiają do składu.</p>
         <h2>Wyposażenie</h2>
         ${ulepszenie('kilof', 'Kilof', n => 'kopie ' + n.szybkosc + '× szybciej, rusza twardsze skały')}
         ${ulepszenie('plecak', 'Plecak', n => 'mieści ' + n.pojemnosc + ' sztuk')}
@@ -353,6 +412,12 @@ function rysujSklep() {
         <div class="wiersz"><div>Odkryte: <b>${MINERALY.filter(m => stan.odkryte?.[m.id]).length}/${MINERALY.length}</b><small>Każda kopalnia ma własne skały i surowce.</small></div>
             <button data-atlas>${atlasOtwarty ? 'Zwiń' : 'Pokaż'}</button></div>
         ${atlasOtwarty ? atlasHtml() : ''}
+        <h2>Księga osiągnięć</h2>
+        <div class="wiersz"><div>Zdobyte: <b>${OSIAGNIECIA.filter(o => stan.osiagniecia?.[o.id]).length}/${OSIAGNIECIA.length}</b></div>
+            <button data-ksiega>${ksiegaOtwarta ? 'Zwiń' : 'Pokaż'}</button></div>
+        ${ksiegaOtwarta ? `<div class="atlas ksiega">${OSIAGNIECIA.map(o => stan.osiagniecia?.[o.id]
+            ? `<div class="${o.rzadkosc}"><b>${o.nazwa}</b><small>${RZADKOSCI[o.rzadkosc]}</small><span>${o.opis}</span></div>`
+            : `<div class="nieznany ${o.rzadkosc}"><b>???</b><small>${RZADKOSCI[o.rzadkosc]}</small></div>`).join('')}</div>` : ''}
         <h2>Urządzenia szybu</h2>
         ${Object.entries(eko.URZADZENIA).map(([k, u]) => `<div class="wiersz"><div><b>${u.nazwa}</b><small>${u.opis}</small></div>
             ${stan[k] ? '<button disabled>Kupione</button>' : `<button data-urzadzenie="${k}" ${stan.kasa < u.cena ? 'disabled' : ''}>Kup za ${u.cena}</button>`}</div>`).join('')}
@@ -406,11 +471,13 @@ function zmienKopalnie(i, noweZiarno) {
 $('sklep').addEventListener('click', e => {
     const d = e.target.dataset;
     if (!e.target.matches('button')) return;
-    if ('sprzedaj' in d) { const z = eko.sprzedajWszystko(stan); stuk(2.2); komunikat('Sprzedano za ' + z + ' monet'); powiedz('sprzedaz'); npc.cheer(); }
+    if ('sprzedaj' in d) { const z = eko.sprzedajWszystko(stan); if (z > 0) zdobadz('grosz'); stuk(2.2); komunikat('Sprzedano za ' + z + ' monet'); powiedz('sprzedaz'); npc.cheer(); }
     else if (d.oddaj) { const z = eko.oddajZlecenie(stan, +d.oddaj); if (z) { stuk(2.4); komunikat('Zlecenie wykonane: +' + z + ' monet', 3000); powiedz('zlecenie'); npc.cheer(); } }
     else if (d.wymien) { if (eko.wymienZlecenie(stan, +d.wymien)) stuk(1.2); }
     else if ('sklad' in d) { const z = eko.sprzedajSklad(stan); stuk(2.2); komunikat('Sprzedano skład za ' + z + ' monet'); }
     else if ('atlas' in d) atlasOtwarty = !atlasOtwarty;
+    else if ('ksiega' in d) ksiegaOtwarta = !ksiegaOtwarta;
+    else if (d.przetop) { const n = eko.przetop(stan, d.przetop, +d.ile || 1); if (n) { stuk(0.5, 0.3, 0.5); komunikat(`Wytopiono: ${n} × ${BLOCKS[PRODUKTY.find(p => p.klucz === d.przetop).id].nazwa}`); } }
     else if (d.wytworz) { if (eko.wytworzZapas(stan, d.wytworz)) stuk(1.6); }
     else if (d.kup) { if (eko.kupUlepszenie(stan, d.kup)) { stuk(1.6); powiedz('zakup'); } }
     else if (d.zapas) { if (eko.kupZapas(stan, d.zapas)) stuk(1.6); }
@@ -569,7 +636,8 @@ function wykonajKomende(tekst) {
 // ---------- Zagrożenia: zawały, woda, omdlenie ----------
 // W tej grze się nie ginie: po wypadku ratownicy wynoszą górnika na
 // powierzchnię, ale połowa urobku zostaje w kopalni.
-function omdlenie(powod) {
+function omdlenie(powod, osiagniecie) {
+    if (osiagniecie) zdobadz(osiagniecie);
     const strata = eko.zgubPoloweUrobku(stan);
     okazja = 'wypadek';
     naPowierzchnie(); eko.napelnijLampe(stan);
@@ -625,7 +693,7 @@ function zawaly(dt) {
             if (isOpen(world.get(l.x, l.cel, l.z))) zmienBlok(l.x, l.cel, l.z, RUBBLE);
             stuk(0.25, 0.5, 0.25); wstrzas = Math.max(wstrzas, 0.5);
         } else l.mesh.position.y = l.y + 0.5;
-        if (trafiony || graczW(l.x, l.cel, l.z, l.x + 1, l.cel + 1, l.z + 1) && l.y <= l.cel) return omdlenie('Przysypał cię zawał.');
+        if (trafiony || graczW(l.x, l.cel, l.z, l.x + 1, l.cel + 1, l.z + 1) && l.y <= l.cel) return omdlenie('Przysypał cię zawał.', 'zawal');
     }
     wstrzas = Math.max(0, wstrzas - dt * 1.5);
 }
@@ -639,7 +707,7 @@ function sprawdzWode(x, y, z) {
     const plan = start < 0 ? null : settleWater(world, start);
     if (!plan || !plan.add.length) return;
     przeplyw = plan; przeplyw.naRaz = Math.max(1, Math.ceil(plan.add.length / 45));
-    komunikat('Woda! Przebiłeś się do zbiornika.', 2500); stuk(0.5, 0.35, 1.2);
+    komunikat('Woda! Przebiłeś się do zbiornika.', 2500); stuk(0.5, 0.35, 1.2); zdobadz('hydraulik');
 }
 function woda(dt) {
     if (przeplyw && (przeplywCzas += dt) > 0.07) {
@@ -660,7 +728,7 @@ function woda(dt) {
     const oko = player.eye();
     const podWoda = world.get(Math.floor(oko.x), Math.floor(oko.y), Math.floor(oko.z)) === WATER;
     oddech = Math.max(0, Math.min(1, oddech + (podWoda ? -dt / 14 : dt / 3)));
-    if (oddech <= 0) omdlenie('Zabrakło ci powietrza.');
+    if (oddech <= 0) omdlenie('Zabrakło ci powietrza.', 'nurek');
     return podWoda;
 }
 
@@ -692,6 +760,7 @@ function postaw() {
     stan[rzecz.zapas]--;
     zmienBlok(x, y, z, id);
     if (id === DYNAMITE) { uzbroj(x, y, z, LONT); komunikat('Lont zapalony — uciekaj!', 2500); }
+    zdobadz({ [TORCH]: 'swiatlo', [PROP]: 'stempel' }[id] || (rzecz.blok ? '' : 'drabina'));
     stuk(1.4, 0.3); odswiezHud(); zapisz();
 }
 
@@ -706,7 +775,7 @@ function sprzatnijOsierocone(cx, cy, cz, r) {
         const lista = [];
         for (let y = cy - r; y <= cy + r + runda; y++) for (let z = cz - r; z <= cz + r; z++) for (let x = cx - r; x <= cx + r; x++) {
             const id = world.get(x, y, z), o = PLACED_LADDERS.indexOf(id);
-            if (isThin(id) && !maOparcie(id, x, y, z)) { lista.push([x, y, z, AIR]); stan[ZAPAS_BLOKU[id]]++; }
+            if (isThin(id) && !maOparcie(id, x, y, z)) { lista.push([x, y, z, AIR]); if (ZAPAS_BLOKU[id]) stan[ZAPAS_BLOKU[id]]++; }
             else if (o >= 0 && !world.solid(x + WALLS[o][0], y, z + WALLS[o][1])) { lista.push([x, y, z, AIR]); stan.drabiny++; }
         }
         if (!lista.length) break;
@@ -722,6 +791,9 @@ function wybuch(x, y, z) {
     const plan = blast(world, x, y, z, id => eko.mozeKopac(stan, id), id => eko.dodajUrobek(stan, id));
     zmienBloki(plan.usun);
     for (const [a, b, c] of plan.lancuch) uzbroj(a, b, c, 0.2);
+    if (plan.lancuch.length) zdobadz('lancuch');
+    czastki.emit(x + 0.5, y + 0.5, z + 0.5, { n: 60, kolor: [0.45, 0.42, 0.4], obszar: 2.5, rozrzut: 9, vy: 5, zycie: 1.1, rozmiar: 0.16 });
+    czastki.emit(x + 0.5, y + 0.5, z + 0.5, { n: 25, kolor: [1, 0.7, 0.2], obszar: 1.5, rozrzut: 7, vy: 4, zycie: 0.5, rozmiar: 0.14 });
     sprzatnijOsierocone(x, y, z, 4);
     // Wstrząs zrywa kruche stropy w szerokim promieniu.
     for (let dy = -BLAST_SHAKE; dy <= BLAST_SHAKE; dy++) for (let dz = -BLAST_SHAKE; dz <= BLAST_SHAKE; dz++) for (let dx = -BLAST_SHAKE; dx <= BLAST_SHAKE; dx++)
@@ -731,7 +803,7 @@ function wybuch(x, y, z) {
     const b = $('blysk'); b.style.transition = 'none'; b.style.opacity = 0.8;
     requestAnimationFrame(() => requestAnimationFrame(() => { b.style.transition = 'opacity .6s'; b.style.opacity = 0; }));
     const p = player.pos;
-    if (Math.hypot(p.x - x - 0.5, p.y + 0.9 - y - 0.5, p.z - z - 0.5) < BLAST_DANGER) omdlenie('Wybuch był za blisko.');
+    if (Math.hypot(p.x - x - 0.5, p.y + 0.9 - y - 0.5, p.z - z - 0.5) < BLAST_DANGER) omdlenie('Wybuch był za blisko.', 'saper');
     odswiezHud(); zapisz();
 }
 function dynamit(dt) {
@@ -739,6 +811,7 @@ function dynamit(dt) {
         const l = lonty[i];
         l.t -= dt;
         if ((l.tik += dt) > 0.35) { l.tik = 0; stuk(3, 0.12, 0.03); }       // syk lontu
+        czastki.emit(l.x + 0.5, l.y + 0.85, l.z + 0.5, { kolor: [1, 0.8, 0.3], rozrzut: 1.2, vy: 1.5, zycie: 0.3, rozmiar: 0.05, obszar: 0.1 });
         if (l.t > 0) continue;
         lonty.splice(i, 1);
         if (world.get(l.x, l.y, l.z) === DYNAMITE) wybuch(l.x, l.y, l.z);
@@ -768,6 +841,7 @@ function kopanie(dt) {
                 sprzatnijOsierocone(hit.x, hit.y, hit.z, 1);
                 poWstrzasie(hit.x, hit.y, hit.z);
                 sprawdzWode(hit.x, hit.y, hit.z);
+                odlamki(hit.x, hit.y, hit.z, hit.id, 12);
                 if (eko.dodajUrobek(stan, hit.id)) { komunikat('+1 ' + b.nazwa); zapisz(); }
                 stuk(0.6, 0.4); odswiezHud();
                 postep = 0; cel = null;
@@ -786,7 +860,12 @@ function kopanie(dt) {
     // Zamach kilofem - stuknięcie w najniższym punkcie.
     const przed = Math.sin(zamach);
     zamach = kopie ? zamach + dt * 11 : 0;
-    if (kopie && przed > 0 && Math.sin(zamach) <= 0) stuk(1 + Math.random() * 0.3);
+    if (kopie && przed > 0 && Math.sin(zamach) <= 0) {
+        stuk(1 + Math.random() * 0.3);
+        // Iskry i okruchy w miejscu uderzenia kilofa.
+        const o = player.eye(), d = player.dir(), t = Math.max(0, hit.dist - 0.05);
+        czastki.emit(o.x + d.x * t, o.y + d.y * t, o.z + d.z * t, { n: 3, kolor: KOLOR_SUROWCA[hit.id] || kolory[BLOCKS[hit.id].tekstury[1]], rozrzut: 2, vy: 1.5, zycie: 0.4, rozmiar: 0.05, obszar: 0.1 });
+    }
     kilofGrupa.position.set(0.34, -0.3, -0.6);
     kilofGrupa.visible = wybrany === 0;
     kilofGrupa.rotation.set(-0.5 - Math.max(0, Math.sin(zamach)) * 0.9, 0.3, -0.35);
@@ -794,7 +873,7 @@ function kopanie(dt) {
 
 // ---------- Pętla gry ----------
 const NIEBO = new THREE.Color(0x8ec5ee), CIEMNOSC = new THREE.Color(0x020203), GLEBINA = new THREE.Color(0x0c3050);
-let podWoda = false, lampaOstrzezenie = 0;
+let podWoda = false, lampaOstrzezenie = 0, kroki = 0;
 function klatka(dt) {
     if (gra && !sklepOtwarty && !komendaOtwarta()) {
         player.update(dt, {
@@ -809,6 +888,13 @@ function klatka(dt) {
         zawaly(dt);
         dynamit(dt);
         podWoda = woda(dt);
+        // Odgłos kroków (w wodzie - chlupot).
+        if (player.onGround || player.inWater) {
+            kroki += Math.hypot(player.vel.x, player.vel.z) * dt;
+            if (kroki > 2.2) { kroki = 0; if (player.inWater) stuk(1.6, 0.08, 0.12); else stuk(0.3 + Math.random() * 0.12, 0.09, 0.05); }
+        }
+        if (player.pos.y <= kopalnia.shaft.bottomY + 0.6) zdobadz('dno');
+        if (!stan.osiagniecia?.grzybiarz && player.touches(id => id === MUSHROOM)) zdobadz('grzybiarz');
 
         // Lina ratunkowa: przytrzymaj R.
         linaCzas = klawisze.has('KeyR') || palce.lina ? linaCzas + dt : 0;
@@ -832,7 +918,7 @@ function klatka(dt) {
         else if (pod === 0 && eko.poziomPaliwa(stan) < 1) { if (eko.poziomPaliwa(stan) < 0.9) komunikat('Lampa napełniona'); eko.napelnijLampe(stan); lampaOstrzezenie = 0; }
     }
     const paliwo = eko.poziomPaliwa(stan);
-    if (paliwo <= 0 && lampaOstrzezenie < 2) { lampaOstrzezenie = 2; komunikat('Lampa zgasła! Wracaj na powierzchnię.', 4000); }
+    if (paliwo <= 0 && lampaOstrzezenie < 2) { lampaOstrzezenie = 2; zdobadz('ciemnosc'); komunikat('Lampa zgasła! Wracaj na powierzchnię.', 4000); }
     else if (paliwo > 0 && paliwo < 0.2 && lampaOstrzezenie < 1) { lampaOstrzezenie = 1; komunikat('Lampa przygasa — kończy się paliwo.', 4000); }
     const moc = paliwo <= 0 ? 0.12 : paliwo < 0.2 ? 0.7 + 0.3 * Math.sin(performance.now() / 70) * Math.sin(performance.now() / 23) : 1;
     const zasieg = eko.LAMPY[stan.lampa].zasieg * (paliwo <= 0 ? 0.4 : 1);
@@ -850,6 +936,7 @@ function klatka(dt) {
     $('oddech').style.display = oddech < 1 ? 'block' : 'none';
     $('oddech').firstElementChild.style.width = Math.round(oddech * 100) + '%';
     $('podwoda').style.opacity = podWoda ? 1 : 0;
+    zycieSwiata(dt, pod); czastki.update(dt); osiagnieciaKlatka();
     chmury.visible = npc.group.visible = pod < 1;
     glowica.material.color.setHex(eko.KILOFY[stan.kilof].kolor);
 
@@ -898,6 +985,6 @@ window.__gra = {
     start() { bezMyszy = true; zlapMysz(); }, palce, dotyk: DOTYK, wybierz, postaw, zapisz,
     get pochodnie() { return pochodnie; }, get oddech() { return oddech; }, get spadki() { return spadki.length + lecace.length; },
     get przeplyw() { return !!przeplyw; }, kop(x, y, z) { zmienBlok(x, y, z, AIR); sprzatnijOsierocone(x, y, z, 1); poWstrzasie(x, y, z); sprawdzWode(x, y, z); },
-    akcjaE, get lonty() { return lonty.length; }, npc, komenda: wykonajKomende, otworzSklep,
+    akcjaE, get lonty() { return lonty.length; }, npc, zdobadz, omdlenie, komenda: wykonajKomende, otworzSklep,
     mysz(v) { myszWcisnieta = v; }, klawisz(k, v) { v ? klawisze.add(k) : klawisze.delete(k); }
 };

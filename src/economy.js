@@ -4,15 +4,15 @@
 // ------------------------------------------------------------
 import { BLOCKS, M } from './blocks.js';
 import { MINES } from './mines.js';
-import { MINERALY } from './minerals.js';
+import { MINERALY, PRODUKTY } from './minerals.js';
 
 // surowce - czego oprócz monet trzeba do wytworzenia (klucze z src/minerals.js)
 export const KILOFY = [
     { nazwa: 'Drewniany kilof', szybkosc: 1.0, cena: 0, kolor: 0x9a6b3a },
     { nazwa: 'Kamienny kilof', szybkosc: 1.5, cena: 60, kolor: 0x8c8c92, surowce: { krzemien: 4 } },
-    { nazwa: 'Miedziany kilof', szybkosc: 2.2, cena: 250, kolor: 0xd6783e, surowce: { miedz: 8, cyna: 4 } },
+    { nazwa: 'Brązowy kilof', szybkosc: 2.2, cena: 250, kolor: 0xd6783e, surowce: { braz: 4 } },
     { nazwa: 'Żelazny kilof', szybkosc: 3.2, cena: 900, kolor: 0xcfd3d8, surowce: { zelazo: 12, wegiel: 6 } },
-    { nazwa: 'Stalowy kilof', szybkosc: 4.6, cena: 3000, kolor: 0x6f8296, surowce: { zelazo: 16, nikiel: 8, wegiel: 10 } },
+    { nazwa: 'Stalowy kilof', szybkosc: 4.6, cena: 3000, kolor: 0x6f8296, surowce: { stal: 8, nikiel: 8 } },
     { nazwa: 'Diamentowy kilof', szybkosc: 7.0, cena: 12000, kolor: 0x6eecf6, surowce: { wolfram: 6, tytan: 6, szafir: 3 } }
 ];
 export const PLECAKI = [
@@ -26,7 +26,7 @@ export const LAMPY = [
     { nazwa: 'Świeczka', zasieg: 7, cena: 0, paliwo: 240 },
     { nazwa: 'Lampa naftowa', zasieg: 11, cena: 120, paliwo: 360, surowce: { wegiel: 4 } },
     { nazwa: 'Lampa karbidowa', zasieg: 16, cena: 600, paliwo: 540, surowce: { cynk: 4, siarka: 6 } },
-    { nazwa: 'Reflektor górniczy', zasieg: 24, cena: 2500, paliwo: 900, surowce: { kwarc: 6, srebro: 4 } }
+    { nazwa: 'Reflektor górniczy', zasieg: 24, cena: 2500, paliwo: 900, surowce: { mosiadz: 4, kwarc: 6 } }
 ];
 // Zapasy, które się zużywają: stawiane w kopalni drabiny i pochodnie.
 export const ZAPASY = {
@@ -92,6 +92,11 @@ export function rezerwa(s) {
         for (const [klucz, ile] of Object.entries(n?.surowce || {})) out[M[klucz]] = (out[M[klucz]] || 0) + ile;
     }
     for (const z of s.zlecenia || []) out[z.id] = (out[z.id] || 0) + z.ile;
+    // Brakujące stopy: odkładamy też surowce, z których się je wytopi.
+    for (const p of PRODUKTY) {
+        const brakuje = (out[p.id] || 0) - ileSurowca(s, p.id);
+        if (brakuje > 0) for (const [klucz, ile] of Object.entries(p.z)) out[M[klucz]] = (out[M[klucz]] || 0) + ile * brakuje;
+    }
     return out;
 }
 // Co zostanie odłożone do składu przy sprzedaży: { id: ile }.
@@ -221,4 +226,22 @@ export function wymienZlecenie(s, i, rnd = Math.random) {
     s.zlecenia.pop();
     if (nowe) s.zlecenia.splice(i, 0, nowe); else s.zlecenia.splice(i, 0, stare);
     return true;
+}
+
+// ---------- Piec hutniczy ----------
+// Ile sztuk stopu da się teraz wytopić z tego, co jest w plecaku i składzie.
+export function ileWytopic(s, klucz) {
+    const p = PRODUKTY.find(x => x.klucz === klucz);
+    if (!p) return 0;
+    return Math.min(...Object.entries(p.z).map(([k, ile]) => Math.floor(ileSurowca(s, M[k]) / ile)));
+}
+// Wytapia n sztuk (albo tyle, ile się da); stop trafia do składu.
+export function przetop(s, klucz, n = 1) {
+    const p = PRODUKTY.find(x => x.klucz === klucz);
+    n = Math.min(n, ileWytopic(s, klucz));
+    if (!p || n < 1) return 0;
+    zuzyjLista(s, Object.entries(p.z).map(([k, ile]) => [M[k], ile * n]));
+    s.sklad[p.id] = (s.sklad[p.id] || 0) + n;
+    s.wytopione = (s.wytopione || 0) + n;
+    return n;
 }

@@ -1,4 +1,4 @@
-import { MINERALY, SKALY } from './minerals.js';
+import { MINERALY, SKALY, PRODUKTY } from './minerals.js';
 
 // ------------------------------------------------------------
 // BLOKI. Każdy blok ma:
@@ -15,7 +15,7 @@ export const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SLATE = 4, BASALT = 5,
     SILVER = 12, GOLD = 13, EMERALD = 14, RUBY = 15, DIAMOND = 16,
     // Drabiny stawiane przez gracza: przy ścianie -x, +x, -z, +z.
     LADDER_W = 17, LADDER_E = 18, LADDER_N = 19, LADDER_S = 20, TORCH = 21,
-    UNSTABLE = 22, RUBBLE = 23, WATER = 24, PROP = 25, DYNAMITE = 26;
+    UNSTABLE = 22, RUBBLE = 23, WATER = 24, PROP = 25, DYNAMITE = 26, MUSHROOM = 54;
 
 function blok(nazwa, twardosc, poziom, wartosc, tekstury, extra = {}) {
     const t = typeof tekstury === 'string' ? [tekstury, tekstury, tekstury] : tekstury;
@@ -50,7 +50,17 @@ BLOCKS[WATER] = blok('Woda', 1, 99, 0, 'kamien', { staly: true });
 BLOCKS[PROP] = blok('Stempel', 1, 99, 0, 'stempel', { staly: true });
 BLOCKS[DYNAMITE] = blok('Dynamit', 1, 99, 0, 'dynamit', { staly: true });
 // Cienkie rzeczy stojące w polu: gracz przez nie przechodzi.
-export function isThin(id) { return id === TORCH || id === PROP || id === DYNAMITE; }
+export function isThin(id) { return id === TORCH || id === PROP || id === DYNAMITE || id === MUSHROOM; }
+
+// Świecący grzyb rośnie w chodnikach i komorach - daje trochę światła.
+BLOCKS[MUSHROOM] = blok('Świecący grzyb', 1, 99, 0, 'grzyb', { staly: true });
+// Stopy z pieca: przedmioty (nie stoją w kopalni). Poziom = najlepszy
+// kilof potrzebny do zdobycia składników.
+for (const p of PRODUKTY) {
+    const poziom = Math.max(...Object.keys(p.z).map(k => BLOCKS[M[k]].poziom));
+    BLOCKS[p.id] = blok(p.nazwa, 1, poziom, p.wartosc, p.klucz, { staly: true, produkt: true });
+    M[p.klucz] = p.id;
+}
 
 // Kierunek ściany, o którą opiera się drabina: [dx, dz].
 export const WALLS = [[-1, 0], [1, 0], [0, -1], [0, 1]];

@@ -7,7 +7,7 @@
 import { WORLD_X, WORLD_Z, SURFACE_AIR } from './config.js';
 import { mulberry32, noise2 } from './rng.js';
 import { charakter } from './mines.js';
-import { AIR, GRASS, DIRT, BEDROCK, PLANKS, LADDER, UNSTABLE, WATER, BLOCKS, isSolid, isHostRock } from './blocks.js';
+import { AIR, GRASS, DIRT, BEDROCK, PLANKS, LADDER, UNSTABLE, WATER, MUSHROOM, BLOCKS, isSolid, isHostRock } from './blocks.js';
 
 export class World {
     constructor(w, h, d) {
@@ -195,6 +195,17 @@ export function generateMine(def, seed) {
             if (world.get(x, y, z) === AIR) world.set(x, y, z, WATER);
     }
 
+    // --- 6e. Świecące grzyby: kępki na dnie chodników i komór ---
+    for (const [x, y, z] of tunel) {
+        if (rnd() > 0.03) continue;
+        for (let i = 0, n = ri(1, 3); i < n; i++) {
+            const gx = x + ri(-1, 1), gz = z + ri(-1, 1);
+            let gy = y;
+            while (gy > 1 && world.get(gx, gy - 1, gz) === AIR) gy--;      // w komorze: na dno
+            if (world.get(gx, gy, gz) === AIR && world.solid(gx, gy - 1, gz)) world.set(gx, gy, gz, MUSHROOM);
+        }
+    }
+
     // --- 7. Powierzchnia: szalunek wokół szybu i budka skupu ---
     for (let dz = -1; dz <= 2; dz++) for (let dx = -1; dx <= 2; dx++) {
         const wSzybie = dx >= 0 && dx <= 1 && dz >= 0 && dz <= 1;
@@ -207,12 +218,14 @@ export function generateMine(def, seed) {
     }
     for (let z = 0; z < 4; z++) for (let x = 0; x < 4; x++) world.set(sx + x, gy + 3, sz + z, PLANKS);   // dach
     world.set(sx + 1, gy, sz + 1, PLANKS); world.set(sx + 1, gy, sz + 2, PLANKS);                         // lada
+    world.set(sx + 3, gy + 4, sz, BEDROCK);                                                               // komin pieca
 
     return {
         world, groundY, seed, zbiorniki, poziomy,
         spawn: { x: cx - 3.5, y: groundY + 1, z: cz + 1 },
         shaft: { x: cx, z: cz, bottomY },
-        shop: { x: sx + 0.5, z: sz + 2 }
+        shop: { x: sx + 0.5, z: sz + 2 },
+        komin: { x: sx + 3.5, y: gy + 5, z: sz + 0.5 }
     };
 }
 

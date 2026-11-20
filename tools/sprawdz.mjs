@@ -4,8 +4,8 @@ import { MINES } from '../src/mines.js';
 import { generateMine } from '../src/mine.js';
 import { meshChunk } from '../src/mesher.js';
 import { BLOCKS, M, AIR, LADDER, COAL, DIAMOND, STONE, SLATE, isSolid } from '../src/blocks.js';
-import { MINERALY, SKALY, RODZAJE } from '../src/minerals.js';
-import { TILE_NAMES, TILE_INDEX, makeTile, makeCrack } from '../src/textures.js';
+import { MINERALY, SKALY, RODZAJE, PRODUKTY } from '../src/minerals.js';
+import { TILE_NAMES, TILE_INDEX, PRZEZROCZYSTE, makeTile, makeCrack } from '../src/textures.js';
 import * as eko from '../src/economy.js';
 import { CHUNK } from '../src/config.js';
 
@@ -78,7 +78,7 @@ test('tekstury: 64x64, nieprzezroczyste (poza drabiną), kafelkują się', () =>
         assert.equal(t.length, 64 * 64 * 4);
         let pelne = 0;
         for (let i = 3; i < t.length; i += 4) if (t[i] === 255) pelne++;
-        if (['drabina', 'pochodnia', 'stempel', 'dynamit'].includes(n)) assert.ok(pelne > 300 && pelne < 3000);
+        if (PRZEZROCZYSTE.has(n)) assert.ok(pelne > 150 && pelne < 3000, n + ': ' + pelne);
         else assert.equal(pelne, 64 * 64, n);
     }
     for (const b of BLOCKS) if (b) for (const t of b.tekstury) assert.ok(t in TILE_INDEX, t);
@@ -112,11 +112,12 @@ test('gospodarka: urobek, sprzedaż, ulepszenia, kopalnie', () => {
     // Lampa: węgiel bierze ze składu.
     assert.ok(eko.kupUlepszenie(s, 'lampa')); assert.deepEqual(s.sklad, {});
     // Z pełnym składem da się zrobić wszystkie kilofy i lampy po kolei.
-    for (const m of MINERALY) s.sklad[m.id] = 50;
+    for (const m of [...MINERALY, ...PRODUKTY]) s.sklad[m.id] = 50;
     while (eko.kupUlepszenie(s, 'kilof'));
     while (eko.kupUlepszenie(s, 'lampa'));
     assert.equal(eko.nastepne(s, 'lampa'), null);
-    assert.equal(s.sklad[M.zelazo], 50 - 12 - 16, 'żelazo zużyte na żelazny i stalowy kilof');
+    assert.equal(s.sklad[M.zelazo], 50 - 12, 'żelazo zużyte na żelazny kilof');
+    assert.equal(s.sklad[M.stal], 50 - 8, 'stal zużyta na stalowy kilof');
     // Dynamit z surowców, bez monet.
     const d0 = s.dynamit, k0 = s.kasa;
     assert.ok(eko.wytworzZapas(s, 'dynamit') && s.dynamit === d0 + 2 && s.kasa === k0 && !eko.wytworzZapas(s, 'drabiny'));
@@ -172,6 +173,7 @@ import { applyChanges } from '../src/mine.js';
 import { TORCH, LADDER_E, PLACED_LADDERS, WALLS, ladderWall, isLadder } from '../src/blocks.js';
 {
     const m = generateMine(MINES[0], 9), w = m.world;
+    for (let i = 0; i < w.data.length; i++) if (w.data[i] === 54) w.data[i] = AIR;      // bez świecących grzybów
     assert.equal(computeLight(w), 0);
     assert.ok(w.light.every(l => l === 0), 'bez pochodni nie ma światła');
     // Zamknięta komora 3x1x1 wykopana w litej skale: światło słabnie o 1 na blok i nie wychodzi przez ścianę.
@@ -408,6 +410,66 @@ import { mulberry32 } from '../src/rng.js';
     const rozne = new Set(); for (let i = 0; i < 400; i++) rozne.add(eko.noweZlecenie(b, rnd).id);
     assert.ok(rozne.size >= 25, 'zlecenia korzystają z całej listy surowców: ' + rozne.size);
     ok++; console.log('  ok  zlecenia: losowanie, oddawanie, wymiana, odkładanie surowców');
+}
+
+// --- Piec, osiągnięcia, grzyby ---
+import { OSIAGNIECIA, RZADKOSCI, sprawdzOsiagniecia, przyznaj } from '../src/achievements.js';
+import { MUSHROOM } from '../src/blocks.js';
+import { SOURCES } from '../src/light.js';
+{
+    // Piec: brąz z 2 miedzi, 1 cyny i 1 węgla; wart więcej niż składniki.
+    const s = eko.nowyStan();
+    s.przedmioty = { [M.miedz]: 9, [M.cyna]: 3 }; s.sklad = { [COAL]: 10, [M.cyna]: 2 };
+    assert.equal(eko.ileWytopic(s, 'braz'), 4);
+    assert.equal(eko.przetop(s, 'braz', 99), 4);
+    assert.deepEqual([eko.ileSurowca(s, M.braz), eko.ileSurowca(s, M.miedz), eko.ileSurowca(s, M.cyna), eko.ileSurowca(s, COAL)], [4, 1, 1, 6]);
+    assert.equal(s.sklad[M.braz], 4, 'stop trafia do składu'); assert.equal(eko.przetop(s, 'stal'), 0);
+    for (const p of PRODUKTY) {
+        const koszt = Object.entries(p.z).reduce((a, [k, n]) => a + BLOCKS[M[k]].wartosc * n, 0);
+        assert.ok(p.wartosc > koszt * 1.3, p.nazwa + ' jest wart więcej niż składniki');
+        assert.ok(TILE_NAMES.includes(p.klucz) && BLOCKS[p.id].produkt);
+    }
+    // Brązowy kilof: skup odkłada brąz, a gdy go brakuje - miedź, cynę i węgiel na niego.
+    const t = eko.nowyStan(); t.kilof = 1;
+    assert.equal(eko.rezerwa(t)[M.braz], 4);
+    assert.equal(eko.rezerwa(t)[M.miedz], 8); assert.equal(eko.rezerwa(t)[M.cyna], 4);
+    t.sklad = { [M.braz]: 3 };
+    assert.equal(eko.rezerwa(t)[M.miedz], 2, 'brakuje jednego brązu');
+    t.przedmioty = { [M.miedz]: 5, [M.cyna]: 5, [COAL]: 9 };
+    eko.sprzedajWszystko(t);
+    assert.ok(eko.ileWytopic(t, 'braz') >= 1, 'po sprzedaży dalej da się wytopić brakujący brąz');
+    eko.przetop(t, 'braz'); t.kasa = 9999;
+    assert.ok(eko.kupUlepszenie(t, 'kilof') && t.kilof === 2);
+
+    // Osiągnięcia.
+    assert.equal(new Set(OSIAGNIECIA.map(o => o.id)).size, OSIAGNIECIA.length);
+    for (const o of OSIAGNIECIA) assert.ok(o.rzadkosc in RZADKOSCI && o.nazwa && o.opis.length > 10, o.id);
+    for (const rz of Object.keys(RZADKOSCI)) assert.ok(OSIAGNIECIA.some(o => o.rzadkosc === rz), 'jest coś w stopniu ' + rz);
+    const a = eko.nowyStan();
+    assert.deepEqual(sprawdzOsiagniecia(a), [], 'nowa gra: nic nie jest zdobyte');
+    eko.dodajUrobek(a, COAL);
+    assert.deepEqual(sprawdzOsiagniecia(a).map(o => o.id), ['brylka']);
+    assert.deepEqual(sprawdzOsiagniecia(a), [], 'drugi raz już nie');
+    assert.equal(przyznaj(a, 'zawal').nazwa, 'Kask się przydał'); assert.equal(przyznaj(a, 'zawal'), null); assert.equal(przyznaj(a, 'nie_ma'), null);
+    a.kasa = 6000; a.kilof = 5; a.kopalnie = [0, 1, 2, 3, 4]; a.wykonaneZlecenia = 10; a.wytopione = 1;
+    for (const m of MINERALY) a.odkryte[m.id] = true;
+    sprawdzOsiagniecia(a);
+    const brak = OSIAGNIECIA.filter(o => !a.osiagniecia[o.id]);
+    assert.ok(brak.every(o => !o.test), 'zostały tylko osiągnięcia za zdarzenia');
+
+    // Świecące grzyby: są w kopalniach, stoją na twardym, świecą słabiej niż pochodnia.
+    assert.ok(SOURCES[MUSHROOM] > 0 && SOURCES[MUSHROOM] < SOURCES[TORCH] && isThin(MUSHROOM) && !isSolid(MUSHROOM));
+    const m = generateMine(MINES[0], 8), w = m.world; let grzyby = 0;
+    for (let i = 0; i < w.data.length; i++) if (w.data[i] === MUSHROOM) {
+        grzyby++;
+        const x = i % w.w, z = Math.floor(i / w.w) % w.d, y = Math.floor(i / (w.w * w.d));
+        assert.ok(w.solid(x, y - 1, z), 'grzyb stoi na twardym');
+    }
+    assert.ok(grzyby >= 5, 'grzyby: ' + grzyby);
+    assert.equal(computeLight(w), grzyby, 'grzyby są źródłami światła');
+    assert.ok(w.light.some(l => l === SOURCES[MUSHROOM]));
+    assert.equal(w.get(Math.floor(m.komin.x), m.komin.y - 1, Math.floor(m.komin.z)), BEDROCK, 'komin stoi na dachu budki');
+    ok++; console.log('  ok  piec i stopy, osiągnięcia (' + OSIAGNIECIA.length + '), świecące grzyby');
 }
 
 // --- Wersja i pliki aplikacji ---

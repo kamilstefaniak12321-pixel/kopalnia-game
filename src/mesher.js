@@ -5,7 +5,7 @@
 // Czysta logika: zwraca zwykłe tablice liczb.
 // ------------------------------------------------------------
 import { CHUNK, ATLAS_TILES, TILE } from './config.js';
-import { AIR, TORCH, WATER, BLOCKS, isSolid, isThin, ladderWall } from './blocks.js';
+import { AIR, TORCH, MUSHROOM, WATER, BLOCKS, isSolid, isThin, ladderWall } from './blocks.js';
 import { TORCH_LIGHT } from './light.js';
 
 const FACE_LIGHT = { '0+': 0.8, '0-': 0.8, '1+': 1.0, '1-': 0.5, '2+': 0.66, '2-': 0.66 };
@@ -72,7 +72,7 @@ export function meshChunk(world, cx, cy, cz, tileIndex) {
         }
         if (isThin(id)) {
             // Dwa skrzyżowane prostokąty; pochodnia zawsze w pełni jasna.
-            const l = id === TORCH ? 1.6 : jasnosc(world.getLight(x, y, z));
+            const l = id === TORCH ? 1.6 : id === MUSHROOM ? 1.3 : jasnosc(world.getLight(x, y, z));
             plaski(x, z, x + 1, z + 1, 0, id === TORCH ? 0 : 1, l);
             plaski(x, z + 1, x + 1, z, id === TORCH ? 0 : 1, 0, l);
             continue;

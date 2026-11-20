@@ -1,5 +1,20 @@
 # Zmiany
 
+## 0.8.0
+
+- Piec hutniczy w skupie: brąz, mosiądz, stal, elektrum i białe złoto.
+  Stopy są warte więcej niż surowce, z których powstały.
+- Sprzęt ze stopów: brązowy kilof (dawny miedziany) z brązu, stalowy ze
+  stali i niklu, reflektor z mosiądzu i kwarcu. Skup odkłada także
+  surowce na brakujące stopy.
+- 23 osiągnięcia z komentarzem, w czterech stopniach rzadkości;
+  powiadomienie w grze i księga w skupie.
+- Odłamki skały przy kopaniu, iskry spod kilofa, dym i iskry przy
+  dynamicie.
+- Świecące grzyby w chodnikach i komorach - naturalne światło.
+- Kapiąca woda: krople ze stropu zdradzają, że tuż nad nim jest zbiornik.
+- Dym z komina budki, odgłos kroków i chlupot w wodzie.
+
 ## 0.7.0
 
 - Zlecenia w skupie: do trzech zamówień na konkretne surowce z kupionych

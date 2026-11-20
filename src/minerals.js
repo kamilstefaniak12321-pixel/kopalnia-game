@@ -70,3 +70,13 @@ export const SKALY = [
 ];
 
 export const RODZAJE = { paliwo: 'Paliwa', metal: 'Metale', klejnot: 'Kamienie szlachetne', mineral: 'Minerały' };
+
+// Stopy i wyroby z pieca hutniczego. To przedmioty, nie bloki w kopalni
+// (numery od 200). "z" - z czego się je wytapia (klucze surowców).
+export const PRODUKTY = [
+    { id: 200, klucz: 'braz', nazwa: 'Brąz', wartosc: 60, kolor: [196, 132, 62], z: { miedz: 2, cyna: 1, wegiel: 1 } },
+    { id: 201, klucz: 'mosiadz', nazwa: 'Mosiądz', wartosc: 85, kolor: [222, 190, 84], z: { miedz: 2, cynk: 1, wegiel: 1 } },
+    { id: 202, klucz: 'stal', nazwa: 'Stal', wartosc: 110, kolor: [150, 162, 178], z: { zelazo: 2, wegiel: 2 } },
+    { id: 203, klucz: 'elektrum', nazwa: 'Elektrum', wartosc: 330, kolor: [238, 224, 150], z: { zloto: 1, srebro: 1, wegiel: 1 } },
+    { id: 204, klucz: 'biale_zloto', nazwa: 'Białe złoto', wartosc: 820, kolor: [240, 236, 224], z: { zloto: 1, platyna: 1, wegiel: 2 } }
+];

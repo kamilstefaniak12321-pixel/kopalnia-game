@@ -34,7 +34,9 @@
 - Gazy kopalniane i lampa bezpieczeństwa.
 - Własna sztolnia, która nie losuje się od nowa.
 
-Zrobione z tej listy: zlecenia w skupie i skupnik Bronek (0.7.0).
+Zrobione z tej listy: zlecenia w skupie i skupnik Bronek (0.7.0). Przetapianie,
+osiągnięcia, świecące grzyby i kapiąca woda (0.8.0). Zostają: znaleziska,
+nietoperze, gazy kopalniane, własna sztolnia.
 
 ## Do zrobienia przy okazji
 

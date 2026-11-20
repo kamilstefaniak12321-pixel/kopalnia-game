@@ -6,14 +6,16 @@
 // ------------------------------------------------------------
 import { TILE } from './config.js';
 import { mulberry32, hash2 } from './rng.js';
-import { MINERALY, SKALY } from './minerals.js';
+import { MINERALY, SKALY, PRODUKTY } from './minerals.js';
 
 const S = TILE;
 
 // Kolejność w atlasie.
 export const TILE_NAMES = ['trawa_gora', 'trawa_bok', 'ziemia', 'kamien', 'lupek', 'bazalt',
     'lita_skala', 'deski', 'drabina', 'pochodnia', 'krucha', 'rumosz', 'stempel', 'dynamit',
-    ...SKALY.map(r => r.klucz), ...MINERALY.map(r => r.klucz)];
+    ...SKALY.map(r => r.klucz), ...MINERALY.map(r => r.klucz), 'grzyb', ...PRODUKTY.map(r => r.klucz)];
+// Tekstury z przezroczystym tłem (cienkie rzeczy i ikony przedmiotów).
+export const PRZEZROCZYSTE = new Set(['drabina', 'pochodnia', 'stempel', 'dynamit', 'grzyb', ...PRODUKTY.map(r => r.klucz)]);
 export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
 // Gładki szum, który powtarza się co 64 piksele.
@@ -237,6 +239,37 @@ function dynamit() {
     return buf;
 }
 
+function grzyb() {
+    // Kępka świecących grzybów: trzy kapelusze na cienkich nóżkach.
+    const buf = new Uint8ClampedArray(S * S * 4);
+    for (const [cx, top, r] of [[20, 40, 7], [36, 30, 9], [47, 46, 5]]) {
+        for (let y = top; y < S; y++) for (let x = cx - 1; x <= cx + 1; x++) put(buf, x, y, 170, 214, 200);
+        for (let y = top - r; y <= top + 1; y++) for (let x = cx - r; x <= cx + r; x++) {
+            const dx = (x - cx) / r, dy = (y - top) / r;
+            if (dx * dx + dy * dy * 2.4 > 1 || dy > 0.15) continue;
+            const k = dy < -0.35 ? 1.25 : 1;
+            put(buf, x, y, 70 * k, 226 * k, 196 * k);
+        }
+        put(buf, cx - 2, top - Math.round(r * 0.4), 220, 255, 240); put(buf, cx + 2, top - Math.round(r * 0.25), 220, 255, 240);
+    }
+    return buf;
+}
+function sztabka(kolor) {
+    // Ikona sztabki: bryła w kształcie trapezu z jasną górą.
+    const buf = new Uint8ClampedArray(S * S * 4);
+    for (let y = 18; y < 48; y++) {
+        const t = (y - 18) / 30, x1 = Math.round(14 - t * 8), x2 = Math.round(50 + t * 8);
+        for (let x = x1; x < x2; x++) {
+            let k = y < 26 ? 1.25 : y > 42 ? 0.6 : 0.95;
+            if (x < x1 + 2 || x >= x2 - 2 || y === 18 || y === 47) k = 0.4;
+            else if (x < x1 + 5) k *= 1.15; else if (x > x2 - 6) k *= 0.75;
+            put(buf, x, y, kolor[0] * k, kolor[1] * k, kolor[2] * k);
+        }
+    }
+    for (let i = 0; i < 4; i++) put(buf, 22 + i, 22, 255, 255, 255);
+    return buf;
+}
+
 function pochodnia() {
     const buf = new Uint8ClampedArray(S * S * 4);   // przezroczyste tło
     for (let y = 26; y < S; y++) for (let x = 28; x < 36; x++) {           // trzonek
@@ -275,6 +308,9 @@ export function makeTile(name) {
     }
     const sk = SKALY.find(r => r.klucz === name);
     if (sk) return skala(sk.kolor, 40 + sk.id, sk.wyglad);
+    if (name === 'grzyb') return grzyb();
+    const pr = PRODUKTY.find(r => r.klucz === name);
+    if (pr) return sztabka(pr.kolor);
     const su = MINERALY.find(r => r.klucz === name);
     if (su) return surowiec(su);
     throw new Error('Nieznana tekstura: ' + name);
