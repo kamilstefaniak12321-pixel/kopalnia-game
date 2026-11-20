@@ -1,0 +1,241 @@
+# ------------------------------------------------------------
+# APLIKACJE - instalator dla Windowsa i aplikacja na Androida (.apk)
+#
+# Po każdej zmianie na main (albo ręcznie: Actions -> Run workflow):
+#   1. "wersja": sprawdzenia gry (npm test) i odczyt wersji
+#      z package.json. Jeśli wydanie v<wersja> ma już wszystkie pliki,
+#      nic więcej się nie buduje.
+#   2. "windows": instalator Kopalnia-<wersja>-instalator.exe
+#      + latest.yml (z niego zainstalowana gra wie o aktualizacji).
+#   3. "android": Kopalnia-<wersja>-android.apk. Z sekretami
+#      ANDROID_KEYSTORE i ANDROID_KEYSTORE_PASSWORD - podpisana kluczem
+#      gry; bez nich - wersja testowa "Kopalnia (test)"
+#      (...-android-TEST.apk, stały jawny klucz z gita).
+# Pliki trafiają do wydania v<wersja> w tym repozytorium.
+# Nowe wydanie = podniesiona "version" w package.json.
+# Opis: docs/aplikacje.md.
+# ------------------------------------------------------------
+name: Aplikacje (komputer i telefon)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Wydania czekają w kolejce i nie przerywają się nawzajem.
+concurrency:
+  group: aplikacje-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+
+  wersja:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      tag: ${{ steps.check.outputs.tag }}
+      exe: ${{ steps.check.outputs.exe }}
+      apk: ${{ steps.check.outputs.apk }}
+      signed: ${{ steps.check.outputs.signed }}
+      build_windows: ${{ steps.check.outputs.build_windows }}
+      build_android: ${{ steps.check.outputs.build_android }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Sprawdzenia gry
+        run: npm test
+
+      - name: Wersja i stan wydania
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v$VERSION"
+          EXE="Kopalnia-$VERSION-instalator.exe"
+          if [ -n "$ANDROID_KEYSTORE" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            SIGNED=true; APK="Kopalnia-$VERSION-android.apk"
+          else
+            SIGNED=false; APK="Kopalnia-$VERSION-android-TEST.apk"
+          fi
+
+          ASSETS=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          ma() { echo "$ASSETS" | grep -Fxq "$1"; }
+
+          if ma "$EXE" && ma "$EXE.blockmap" && ma "latest.yml"; then BUILD_WINDOWS=false; else BUILD_WINDOWS=true; fi
+          if ma "$APK"; then BUILD_ANDROID=false; else BUILD_ANDROID=true; fi
+
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "exe=$EXE"
+            echo "apk=$APK"
+            echo "signed=$SIGNED"
+            echo "build_windows=$BUILD_WINDOWS"
+            echo "build_android=$BUILD_ANDROID"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice title=Wersja::$TAG - Windows: budować=$BUILD_WINDOWS, Android: budować=$BUILD_ANDROID (klucz gry: $SIGNED)"
+
+  # ----------------------------------------------------------
+  # Windows: instalator (electron-builder, NSIS)
+  # ----------------------------------------------------------
+  windows:
+    needs: wersja
+    if: needs.wersja.outputs.build_windows == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.wersja.outputs.version }}
+      TAG: ${{ needs.wersja.outputs.tag }}
+      EXE: ${{ needs.wersja.outputs.exe }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Zbuduj instalator
+        run: |
+          set -o pipefail
+          if ! npx electron-builder --win --x64 --publish never 2>&1 | tee build.log; then
+            TEXT=$(tail -n 30 build.log | sed -e 's/\x1b\[[0-9;]*m//g' -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN { ORS = "%0A" } { print }')
+            echo "::error title=Budowanie instalatora::$TEXT"
+            exit 1
+          fi
+
+      - name: Sprawdź pliki
+        run: |
+          for FILE in "dist/$EXE" "dist/$EXE.blockmap" "dist/latest.yml"; do
+            if [ ! -f "$FILE" ]; then
+              echo "::error title=Brak pliku::Nie powstał $FILE. W dist/ jest: $(ls dist | tr '\n' ' ')"
+              exit 1
+            fi
+          done
+          if ! grep -q "url: $EXE" dist/latest.yml; then
+            echo "::error title=latest.yml::latest.yml nie wskazuje na $EXE"
+            exit 1
+          fi
+          SIZE=$(( $(stat -c %s "dist/$EXE") / 1024 / 1024 ))
+          echo "::notice title=Instalator::$EXE ($SIZE MB), $EXE.blockmap, latest.yml"
+
+      # Nowe wydanie albo uzupełnienie istniejącego. latest.yml idzie
+      # na końcu - dopiero wtedy zainstalowane gry widzą nową wersję.
+      - name: Opublikuj wydanie
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Kopalnia $VERSION. Windows: pobierz $EXE i uruchom (zainstalowana gra aktualizuje się sama). Android: pobierz na telefonie plik .apk i otwórz. Zmiany: CHANGELOG.md."
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Kopalnia $VERSION" --notes "$NOTES" --latest
+          fi
+          gh release upload "$TAG" "dist/$EXE" "dist/$EXE.blockmap" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" dist/latest.yml --repo "$GITHUB_REPOSITORY" --clobber
+          echo "::notice title=Wydanie::$TAG: https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+
+  # ----------------------------------------------------------
+  # Android: aplikacja .apk (po Windowsie - żeby nie tworzyć tego
+  # samego wydania naraz)
+  # ----------------------------------------------------------
+  android:
+    needs: [wersja, windows]
+    if: always() && needs.wersja.result == 'success' && needs.wersja.outputs.build_android == 'true'
+    # Konkretna wersja systemu (z gotowym Android SDK).
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.wersja.outputs.version }}
+      TAG: ${{ needs.wersja.outputs.tag }}
+      APK: ${{ needs.wersja.outputs.apk }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - run: npm ci
+
+      - name: Pliki gry do aplikacji
+        run: npm run android:sync
+
+      # Klucz z sekretów: jest - wydanie (release); nie ma - wersja
+      # testowa "Kopalnia (test)" (debug, stały klucz z gita).
+      - name: Klucz do podpisu
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ "${{ needs.wersja.outputs.signed }}" = "true" ]; then
+            echo "$ANDROID_KEYSTORE" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/kopalnia.p12"
+            {
+              echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/kopalnia.p12"
+              echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+              echo "KIND=release"
+            } >> "$GITHUB_ENV"
+          else
+            echo "KIND=debug" >> "$GITHUB_ENV"
+            echo "::warning title=Android::Brak sekretów ANDROID_KEYSTORE / ANDROID_KEYSTORE_PASSWORD - powstaje wersja testowa \"Kopalnia (test)\". Jak dodać klucz gry: docs/aplikacje.md."
+          fi
+
+      - name: Zbuduj aplikację
+        working-directory: android
+        run: |
+          set -o pipefail
+          if [ "$KIND" = "release" ]; then TASK=assembleRelease; else TASK=assembleDebug; fi
+          chmod +x gradlew
+          if ! ./gradlew "$TASK" --no-daemon --stacktrace 2>&1 | tee ../build.log; then
+            TEXT=$(grep -E "error|FAILED|What went wrong|Exception" -A 3 ../build.log | head -n 40 | sed -e 's/%/%25/g' -e 's/\r//g' | awk 'BEGIN { ORS = "%0A" } { print }')
+            echo "::error title=Budowanie aplikacji::$TEXT"
+            exit 1
+          fi
+
+      - name: Sprawdź aplikację
+        run: |
+          FILE=$(ls android/app/build/outputs/apk/$KIND/*.apk | head -n 1)
+          if [ -z "$FILE" ]; then
+            echo "::error title=Brak pliku::Nie powstał plik .apk ($KIND)."
+            exit 1
+          fi
+          mkdir -p dist
+          cp "$FILE" "dist/$APK"
+          TOOLS="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          BADGING=$("$TOOLS/aapt2" dump badging "dist/$APK" | grep -E "^package:|^application-label:" | tr '\n' ' ')
+          CERT=$("$TOOLS/apksigner" verify --print-certs "dist/$APK" | grep -m1 "SHA-256" || true)
+          SIZE=$(( $(stat -c %s "dist/$APK") / 1024 / 1024 ))
+          echo "::notice title=Aplikacja ($KIND)::$APK ($SIZE MB)%0A$BADGING%0A$CERT"
+
+      - name: Dołóż do wydania
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NOTES="Kopalnia $VERSION. Windows: pobierz instalator .exe i uruchom (zainstalowana gra aktualizuje się sama). Android: pobierz na telefonie $APK i otwórz. Zmiany: CHANGELOG.md."
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Kopalnia $VERSION" --notes "$NOTES" --latest
+          fi
+          gh release upload "$TAG" "dist/$APK" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "::notice title=Wydanie (Android)::$TAG: $APK"

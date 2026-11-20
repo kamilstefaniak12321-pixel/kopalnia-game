@@ -1,12 +1,64 @@
 {
     "name": "kopalnia-game",
-    "version": "0.1.0",
+    "productName": "Kopalnia",
+    "version": "0.2.0",
     "description": "Gra o górniku - proceduralne kopalnie, surowce i ulepszenia",
     "author": "Kamil",
     "private": true,
     "type": "module",
+    "main": "desktop/main.cjs",
     "scripts": {
+        "start": "electron .",
         "test": "node tools/sprawdz.mjs",
-        "start": "python -m http.server 8080"
+        "serwer": "python -m http.server 8080",
+        "dist": "electron-builder --win --publish never",
+        "android:www": "node tools/android-www.mjs",
+        "android:sync": "node tools/android-www.mjs && npx cap sync android"
+    },
+    "dependencies": {
+        "electron-updater": "6.8.9"
+    },
+    "devDependencies": {
+        "@capacitor/android": "8.5.3",
+        "@capacitor/cli": "8.5.3",
+        "@capacitor/core": "8.5.3",
+        "electron": "44.4.5",
+        "electron-builder": "26.15.3"
+    },
+    "build": {
+        "appId": "pl.kamil.kopalnia",
+        "productName": "Kopalnia",
+        "directories": {
+            "output": "dist"
+        },
+        "files": [
+            "index.html",
+            "src/**/*",
+            "lib/**/*",
+            "desktop/**/*",
+            "package.json"
+        ],
+        "win": {
+            "target": "nsis",
+            "icon": "desktop/icon.png"
+        },
+        "nsis": {
+            "oneClick": false,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": true,
+            "shortcutName": "Kopalnia",
+            "artifactName": "Kopalnia-${version}-instalator.${ext}",
+            "installerLanguages": [
+                "pl_PL"
+            ],
+            "language": "1045"
+        },
+        "publish": {
+            "provider": "github",
+            "owner": "kamilstefaniak12321-pixel",
+            "repo": "kopalnia-game",
+            "releaseType": "release"
+        }
     }
 }

@@ -1,0 +1,8 @@
+{
+    "appId": "pl.kamil.kopalnia",
+    "appName": "Kopalnia",
+    "webDir": "www",
+    "android": {
+        "backgroundColor": "#1D1814"
+    }
+}

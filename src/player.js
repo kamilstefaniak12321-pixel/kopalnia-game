@@ -50,9 +50,10 @@ export class Player {
     }
 
     update(dt, input) {
-        let fx = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
-        let sx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-        const len = Math.hypot(fx, sx) || 1;
+        // Klawisze dają -1/0/1, gałka dotykowa płynne wartości (fx, sx).
+        const fx = input.fx ?? ((input.forward ? 1 : 0) - (input.back ? 1 : 0));
+        const sx = input.sx ?? ((input.right ? 1 : 0) - (input.left ? 1 : 0));
+        const len = Math.max(1, Math.hypot(fx, sx));
         const speed = input.sprint ? SPRINT_SPEED : WALK_SPEED;
         const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
         const tx = (-sin * fx + cos * sx) / len * speed;

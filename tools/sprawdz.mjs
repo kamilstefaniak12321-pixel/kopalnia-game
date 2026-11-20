@@ -137,5 +137,19 @@ import { PLAYER_HEIGHT } from '../src/config.js';
     ok++; console.log('  ok  gracz: grawitacja, ściany, raycast, drabina');
 }
 
+// --- Wersja i pliki aplikacji ---
+import { readFileSync, existsSync } from 'node:fs';
+import { VERSION } from '../src/config.js';
+{
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+    const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+    assert.equal(VERSION, pkg.version, 'wersja w src/config.js = package.json');
+    assert.equal(lock.version, pkg.version, 'wersja w package-lock.json');
+    assert.equal(lock.packages[''].version, pkg.version, 'wersja w package-lock.json (packages)');
+    assert.ok(readFileSync('CHANGELOG.md', 'utf8').includes('## ' + pkg.version), 'CHANGELOG ma sekcję tej wersji');
+    for (const f of [pkg.main, 'desktop/preload.cjs', 'desktop/icon.png', 'android/app/klucz-testowy.keystore']) assert.ok(existsSync(f), f);
+    ok++; console.log('  ok  wersja i pliki aplikacji');
+}
+
 console.log(`\nWszystko w porządku (${ok} sprawdzeń).`);
 

@@ -2,7 +2,8 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
     <title>Kopalnia</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./src/ui.css">
@@ -26,7 +27,7 @@
         <h1>Kopalnia</h1>
         <p class="wersja"></p>
         <p>Zejdź do kopalni, wykop surowce, sprzedaj je na powierzchni<br>i kup lepszy sprzęt oraz nowe kopalnie.</p>
-        <table>
+        <table class="klawiatura">
             <tr><td>W A S D</td><td>ruch</td></tr>
             <tr><td>Mysz</td><td>rozglądanie, lewy przycisk — kopanie</td></tr>
             <tr><td>Spacja / Shift</td><td>skok; na drabinie w górę / w dół</td></tr>
@@ -35,10 +36,29 @@
             <tr><td>R (przytrzymaj)</td><td>lina ratunkowa — powrót na powierzchnię</td></tr>
             <tr><td>T</td><td>komendy testowe</td></tr>
         </table>
+        <table class="palce">
+            <tr><td>Gałka po lewej</td><td>ruch</td></tr>
+            <tr><td>Przeciąganie po ekranie</td><td>rozglądanie</td></tr>
+            <tr><td>⛏ (przytrzymaj)</td><td>kopanie; można przy tym się rozglądać</td></tr>
+            <tr><td>▲ / ▼</td><td>skok; na drabinie w górę / w dół</td></tr>
+            <tr><td>Sklep</td><td>pojawia się przy budce na powierzchni</td></tr>
+            <tr><td>Lina (przytrzymaj)</td><td>powrót na powierzchnię</td></tr>
+        </table>
+        <p class="wersja" id="aktualizacja"></p>
         <button id="graj">Graj</button>
     </div>
 
     <div id="sklep" class="okno" hidden></div>
+
+    <!-- Sterowanie dotykowe (telefon) - widoczne tylko na ekranach dotykowych -->
+    <div id="dotyk">
+        <div id="galka"><div></div></div>
+        <button id="d-kop">⛏</button>
+        <button id="d-skok">▲</button>
+        <button id="d-dol">▼</button>
+        <button id="d-sklep" hidden>Sklep</button>
+        <button id="d-lina">Lina</button>
+    </div>
 
     <script type="module" src="./src/main.js"></script>
 </body>

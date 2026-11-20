@@ -7,13 +7,14 @@ surowce, sprzedajesz je na powierzchni i kupujesz lepszy sprzęt oraz nowe kopal
   (te same proporcje co w Various Roots).
 - Silnik: three.js, bez kroku budowania — wystarczy przeglądarka.
 
-## Jak uruchomić
+## Jak zagrać
 
-Gra używa modułów, więc potrzebuje małego serwera (samo kliknięcie w `index.html` nie wystarczy):
+Gotowe aplikacje są w [wydaniach](https://github.com/kamilstefaniak12321-pixel/kopalnia-game/releases/latest):
+instalator na Windowsa (`.exe`) i aplikacja na Androida (`.apk`).
+Szczegóły: [docs/aplikacje.md](docs/aplikacje.md).
 
-    python -m http.server 8080
-
-i w przeglądarce: http://localhost:8080
+Ze źródeł: `npm install` i `npm start` (okno aplikacji) albo
+`npm run serwer` i http://localhost:8080 w przeglądarce.
 
 ## Sterowanie
 
@@ -25,6 +26,7 @@ i w przeglądarce: http://localhost:8080
 | Ctrl | bieg |
 | E | skup i sklep (przy budce na powierzchni) |
 | R (przytrzymaj) | lina ratunkowa na powierzchnię |
+| Telefon | gałka, przeciąganie po ekranie i przyciski na ekranie |
 | T | komendy testowe: `kasa N`, `kilof 0-5`, `plecak 0-3`, `lampa 0-3`, `kopalnia 0-2`, `gora`, `dol`, `reset` |
 
 ## Co gdzie leży
@@ -40,6 +42,8 @@ i w przeglądarce: http://localhost:8080
 | `src/mesher.js` | zamiana bloków na trójkąty |
 | `src/player.js` | ruch gracza, zderzenia, drabina |
 | `src/main.js` | pętla gry, kopanie, HUD, sklep |
+| `desktop/` | aplikacja na Windowsa (Electron) |
+| `android/` | aplikacja na Androida (Capacitor) |
 | `tools/sprawdz.mjs` | sprawdzenia logiki: `npm test` |
 
 Postęp (monety, sprzęt, kopalnie, urobek) zapisuje się w przeglądarce.

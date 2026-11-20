@@ -24,7 +24,10 @@ function zapisz() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(stan)); 
 
 // ---------- Ekran ----------
 const renderer = new THREE.WebGLRenderer({ antialias: false });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Ekran dotykowy (telefon, tablet): własne sterowanie i lżejszy obraz.
+const DOTYK = window.matchMedia('(pointer: coarse)').matches;
+document.body.classList.toggle('dotyk', DOTYK);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, DOTYK ? 1.5 : 2));
 renderer.autoClear = false;
 document.body.prepend(renderer.domElement);
 
@@ -192,9 +195,9 @@ function rysujSklep() {
         ${ulepszenie('lampa', 'Lampa', n => 'świeci na ' + n.zasieg + ' bloków')}
         <h2>Kopalnie</h2>${kopalnie}
         <div class="wiersz"><div>Nowa wyprawa<small>Ta sama kopalnia, ale z nowym układem chodników.</small></div><button data-nowa>Wylosuj</button></div>
-        <p><button data-zamknij>Wróć do gry (E)</button></p>`;
+        <p><button data-zamknij>${DOTYK ? 'Wróć do gry' : 'Wróć do gry (E)'}</button></p>`;
 }
-function otworzSklep() { sklepOtwarty = true; $('sklep').hidden = false; rysujSklep(); document.exitPointerLock?.(); }
+function otworzSklep() { sklepOtwarty = true; myszWcisnieta = false; $('dotyk').classList.remove('widoczne'); $('sklep').hidden = false; rysujSklep(); document.exitPointerLock?.(); }
 function zamknijSklep() { sklepOtwarty = false; $('sklep').hidden = true; zlapMysz(); }
 function zmienKopalnie(i, noweZiarno) {
     stan.kopalnia = i;
@@ -215,8 +218,8 @@ $('sklep').addEventListener('click', e => {
 
 // ---------- Sterowanie ----------
 const klawisze = new Set();
-let myszWcisnieta = false, gra = false, bezMyszy = false;
-function zlapMysz() { gra = true; $('start').hidden = true; if (!bezMyszy) renderer.domElement.requestPointerLock?.(); }
+let myszWcisnieta = false, gra = false, bezMyszy = DOTYK;
+function zlapMysz() { gra = true; $('start').hidden = true; $('dotyk').classList.add('widoczne'); if (!bezMyszy) renderer.domElement.requestPointerLock?.(); }
 $('graj').addEventListener('click', zlapMysz);
 renderer.domElement.addEventListener('click', () => { if (gra && !sklepOtwarty) zlapMysz(); });
 document.addEventListener('pointerlockchange', () => {
@@ -248,6 +251,7 @@ document.addEventListener('keydown', e => {
     if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
     klawisze.add(e.code);
     if (e.code === 'KeyE') { if (przySklepie()) otworzSklep(); else komunikat('Skup jest w budce na powierzchni'); }
+    if (e.code === 'Escape' && bezMyszy) { gra = false; $('start').hidden = false; $('graj').textContent = 'Wróć do gry'; }
     if (e.code === 'KeyT') {
         e.preventDefault(); klawisze.clear(); document.exitPointerLock?.();
         $('komenda').style.display = 'block'; $('komenda').focus();
@@ -255,6 +259,61 @@ document.addEventListener('keydown', e => {
 });
 document.addEventListener('keyup', e => klawisze.delete(e.code));
 window.addEventListener('blur', () => { klawisze.clear(); myszWcisnieta = false; });
+
+// ---------- Sterowanie dotykowe ----------
+// Gałka = ruch, przeciąganie po ekranie (albo po przycisku kilofa) =
+// rozglądanie, przyciski trzyma się palcem.
+const palce = { fx: 0, sx: 0, skok: false, dol: false, lina: false };
+if (DOTYK) {
+    const galka = $('galka'), kciuk = galka.firstElementChild;
+    let galkaId = null, patrzId = null, px = 0, py = 0;
+    const ustawGalke = e => {
+        const r = galka.getBoundingClientRect(), R = r.width / 2;
+        let dx = (e.clientX - r.left - R) / R, dy = (e.clientY - r.top - R) / R;
+        const d = Math.hypot(dx, dy);
+        if (d > 1) { dx /= d; dy /= d; }
+        palce.sx = Math.abs(dx) < 0.15 ? 0 : dx; palce.fx = Math.abs(dy) < 0.15 ? 0 : -dy;
+        kciuk.style.transform = `translate(${dx * R * 0.6}px, ${dy * R * 0.6}px)`;
+    };
+    galka.addEventListener('pointerdown', e => { galkaId = e.pointerId; galka.setPointerCapture(e.pointerId); ustawGalke(e); });
+    galka.addEventListener('pointermove', e => { if (e.pointerId === galkaId) ustawGalke(e); });
+    const pusc = e => { if (e.pointerId !== galkaId) return; galkaId = null; palce.fx = palce.sx = 0; kciuk.style.transform = ''; };
+    galka.addEventListener('pointerup', pusc); galka.addEventListener('pointercancel', pusc);
+
+    const patrz = el => {
+        el.addEventListener('pointerdown', e => {
+            if (patrzId !== null || !gra || sklepOtwarty) return;
+            patrzId = e.pointerId; px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId);
+        });
+        el.addEventListener('pointermove', e => {
+            if (e.pointerId !== patrzId) return;
+            player.yaw -= (e.clientX - px) * 0.006;
+            player.pitch = Math.max(-1.55, Math.min(1.55, player.pitch - (e.clientY - py) * 0.006));
+            px = e.clientX; py = e.clientY;
+        });
+        const koniec = e => { if (e.pointerId === patrzId) patrzId = null; };
+        el.addEventListener('pointerup', koniec); el.addEventListener('pointercancel', koniec);
+    };
+    patrz(renderer.domElement); patrz($('d-kop'));
+
+    // Przycisk trzymany palcem: wł. przy dotknięciu, wył. przy puszczeniu.
+    const trzymany = (id, ustaw) => {
+        const el = $(id);
+        const zmien = (e, v) => { e.preventDefault(); ustaw(v); el.classList.toggle('wcisniety', v); };
+        el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); zmien(e, true); });
+        el.addEventListener('pointerup', e => zmien(e, false));
+        el.addEventListener('pointercancel', e => zmien(e, false));
+    };
+    trzymany('d-kop', v => { myszWcisnieta = v; });
+    trzymany('d-skok', v => { palce.skok = v; });
+    trzymany('d-dol', v => { palce.dol = v; });
+    trzymany('d-lina', v => { palce.lina = v; });
+    $('d-sklep').addEventListener('click', () => { if (przySklepie()) otworzSklep(); });
+    document.addEventListener('contextmenu', e => e.preventDefault());
+}
+// Telefon chowa aplikację albo kartę - zapisz postęp od razu.
+window.addEventListener('apppause', zapisz);
+document.addEventListener('visibilitychange', () => { if (document.hidden) zapisz(); });
 
 // ---------- Komendy testowe (klawisz T) ----------
 function wykonajKomende(tekst) {
@@ -322,16 +381,18 @@ const NIEBO = new THREE.Color(0x8ec5ee), CIEMNOSC = new THREE.Color(0x020203);
 function klatka(dt) {
     if (gra && !sklepOtwarty && !komendaOtwarta()) {
         player.update(dt, {
+            fx: DOTYK ? palce.fx : undefined, sx: DOTYK ? palce.sx : undefined,
             forward: klawisze.has('KeyW'), back: klawisze.has('KeyS'),
             left: klawisze.has('KeyA'), right: klawisze.has('KeyD'),
-            jump: klawisze.has('Space'), down: klawisze.has('ShiftLeft') || klawisze.has('ShiftRight'),
+            jump: klawisze.has('Space') || palce.skok,
+            down: klawisze.has('ShiftLeft') || klawisze.has('ShiftRight') || palce.dol,
             sprint: klawisze.has('ControlLeft')
         });
         kopanie(dt);
 
         // Lina ratunkowa: przytrzymaj R.
-        linaCzas = klawisze.has('KeyR') ? linaCzas + dt : 0;
-        if (linaCzas > 1.5) { naPowierzchnie(); linaCzas = 0; klawisze.delete('KeyR'); komunikat('Lina wyciągnęła cię na powierzchnię'); }
+        linaCzas = klawisze.has('KeyR') || palce.lina ? linaCzas + dt : 0;
+        if (linaCzas > 1.5) { naPowierzchnie(); linaCzas = 0; klawisze.delete('KeyR'); palce.lina = false; komunikat('Lina wyciągnęła cię na powierzchnię'); }
     }
 
     const oko = player.eye();
@@ -354,7 +415,8 @@ function klatka(dt) {
     const glebokosc = Math.max(0, Math.floor(kopalnia.groundY + 1 - player.pos.y));
     $('glebokosc').textContent = glebokosc > 0 ? `Głębokość: ${glebokosc} m` : MINES[stan.kopalnia].nazwa + ' — powierzchnia';
     $('podpowiedz').textContent = !gra || sklepOtwarty ? '' : linaCzas > 0.2 ? 'Wciągam linę…'
-        : przySklepie() ? 'E — skup i sklep' : player.onLadder ? 'Spacja — w górę, Shift — w dół' : '';
+        : DOTYK ? '' : przySklepie() ? 'E — skup i sklep' : player.onLadder ? 'Spacja — w górę, Shift — w dół' : '';
+    if (DOTYK) $('d-sklep').hidden = !przySklepie();
     if (performance.now() > komunikatDo) $('komunikat').style.opacity = 0;
 
     renderer.clear();
@@ -371,6 +433,12 @@ function rozmiar() {
 window.addEventListener('resize', rozmiar);
 
 document.querySelector('.wersja').textContent = 'wersja ' + VERSION;
+// Aplikacja na komputer: stan aktualizacji na ekranie startowym.
+if (window.desktop) {
+    const pokaz = tekst => { $('aktualizacja').textContent = tekst || ''; };
+    window.desktop.stanAktualizacji().then(pokaz);
+    window.desktop.naAktualizacje(pokaz);
+}
 if (!stan.kopalnie.includes(stan.kopalnia)) stan.kopalnia = 0;
 wczytajKopalnie(); odswiezHud(); rozmiar();
 setInterval(zapisz, 10000);
@@ -385,6 +453,6 @@ renderer.setAnimationLoop(teraz => {
 // Dla testów automatycznych: sterowanie bez łapania myszy.
 window.__gra = {
     get stan() { return stan; }, get player() { return player; }, get kopalnia() { return kopalnia; },
-    start() { bezMyszy = true; zlapMysz(); }, komenda: wykonajKomende, otworzSklep,
+    start() { bezMyszy = true; zlapMysz(); }, palce, dotyk: DOTYK, komenda: wykonajKomende, otworzSklep,
     mysz(v) { myszWcisnieta = v; }, klawisz(k, v) { v ? klawisze.add(k) : klawisze.delete(k); }
 };

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Wygląd aplikacji: ciemne tło, bez paska tytułu. -->
+
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/kopalniaDark</item>
+        <item name="colorPrimaryDark">@color/kopalniaDark</item>
+        <item name="colorAccent">@color/kopalniaGold</item>
+        <item name="android:windowBackground">@color/kopalniaDark</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+        <item name="android:windowBackground">@color/kopalniaDark</item>
+    </style>
+
+    <!-- Ekran startowy: ikonka na ciemnym tle. -->
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/kopalniaDark</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+    </style>
+
+    <color name="kopalniaDark">#1D1814</color>
+    <color name="kopalniaGold">#F7C948</color>
+
+</resources>
