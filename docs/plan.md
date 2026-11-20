@@ -35,8 +35,8 @@
 - Własna sztolnia, która nie losuje się od nowa.
 
 Zrobione z tej listy: zlecenia w skupie i skupnik Bronek (0.7.0). Przetapianie,
-osiągnięcia, świecące grzyby i kapiąca woda (0.8.0). Zostają: znaleziska,
-nietoperze, gazy kopalniane, własna sztolnia.
+osiągnięcia, świecące grzyby i kapiąca woda (0.8.0). Znaleziska i nietoperze (0.9.0).
+Zostają: gazy kopalniane, własna sztolnia.
 
 ## Do zrobienia przy okazji
 

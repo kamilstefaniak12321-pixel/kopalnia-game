@@ -1,5 +1,21 @@
 # Zmiany
 
+## 0.9.0
+
+- Znaleziska: skamieniałości ukryte w skale (blok ze spiralą amonitu),
+  stare skrzynki na dnie komór (okaz po dawnych górnikach i trochę
+  zapasów) oraz geody. 16 okazów w trzech grupach, w tym bardzo rzadkie.
+- Geody trafiają do plecaka, a rozbija się je w skupie: w środku są 2-4
+  klejnoty albo minerały z danej kopalni, czasem także kryształ.
+- Gablotka znalezisk w skupie; za pierwszy okaz pełna nagroda, za
+  kolejne ćwierć.
+- Dynamit nie niszczy znalezisk - zostają w ścianie na kilof.
+- Nietoperze w komorach: wiszą pod stropem, światło lampy je płoszy,
+  odlatują w ciemność i siadają gdzie indziej.
+- Cztery nowe osiągnięcia.
+- Światło przelicza się tylko wtedy, gdy zmiana dotyczy oświetlonego
+  miejsca (płynniejsze kopanie, zwłaszcza na telefonie).
+
 ## 0.8.0
 
 - Piec hutniczy w skupie: brąz, mosiądz, stal, elektrum i białe złoto.

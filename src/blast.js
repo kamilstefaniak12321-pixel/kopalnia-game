@@ -2,6 +2,7 @@
 // DYNAMIT. Wybuch kruszy każdą skałę w kuli o promieniu BLAST_RADIUS,
 // ale:
 //   - stałe rzeczy (lita skała, szalunki, drabina szybu) zostają,
+//   - znaleziska (skamieniałości, geody, skrzynki) zostają - są na kilof,
 //   - rudy, których obecny kilof nie ruszy, zostają w ścianie,
 //   - rudy, które kilof ruszy, trafiają do plecaka (dopóki jest miejsce;
 //     gdy się nie mieszczą, też zostają).
@@ -25,7 +26,7 @@ export function blast(world, cx, cy, cz, mozeKopac, zbierz) {
         if (id === AIR || id === WATER) continue;
         if (id === DYNAMITE && (dx || dy || dz)) { lancuch.push([x, y, z]); continue; }   // odpali się zaraz sam
         const postawione = isThin(id) || (ladderWall(id) >= 0 && id !== LADDER);
-        if (BLOCKS[id].staly && !postawione) continue;
+        if ((BLOCKS[id].staly && !postawione) || BLOCKS[id].cenny) continue;
         if (BLOCKS[id].wartosc && !(mozeKopac(id) && zbierz(id))) continue;
         usun.push([x, y, z, AIR]);
     }

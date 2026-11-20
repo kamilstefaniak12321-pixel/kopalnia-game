@@ -2,7 +2,7 @@
 // GOSPODARKA: urobek w plecaku, sprzedaż, ulepszenia, kopalnie.
 // Czysta logika na zwykłym obiekcie stanu (łatwo zapisać i sprawdzić).
 // ------------------------------------------------------------
-import { BLOCKS, M } from './blocks.js';
+import { BLOCKS, M, GEODE } from './blocks.js';
 import { MINES } from './mines.js';
 import { MINERALY, PRODUKTY } from './minerals.js';
 
@@ -103,6 +103,7 @@ export function rezerwa(s) {
 export function odlozone(s) {
     const out = {};
     for (const [id, trzeba] of Object.entries(rezerwa(s))) { const n = Math.min(trzeba, ileSurowca(s, id)); if (n) out[id] = n; }
+    if (ileSurowca(s, GEODE)) out[GEODE] = ileSurowca(s, GEODE);      // geody czekają na rozbicie, nie na sprzedaż
     return out;
 }
 const wartosc = lista => Object.entries(lista || {}).reduce((a, [id, n]) => a + BLOCKS[id].wartosc * n, 0);

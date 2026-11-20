@@ -8,6 +8,7 @@
 // ------------------------------------------------------------
 import { MINERALY } from './minerals.js';
 import { MINES } from './mines.js';
+import { ZNALEZISKA } from './finds.js';
 
 export const RZADKOSCI = { zwykle: 'Zwykłe', rzadkie: 'Rzadkie', epickie: 'Epickie', legendarne: 'Legendarne' };
 const odkryte = s => Object.keys(s.odkryte || {}).length;
@@ -28,6 +29,9 @@ export const OSIAGNIECIA = [
     { id: 'zlecenie', rzadkosc: 'rzadkie', nazwa: 'Solidna firma', opis: 'Pierwsze zlecenie oddane w terminie. Terminu nie było, ale i tak.', test: s => (s.wykonaneZlecenia || 0) >= 1 },
     { id: 'hutnik', rzadkosc: 'rzadkie', nazwa: 'Hutnik', opis: 'Pierwszy stop z pieca. Brwi odrosną.', test: s => (s.wytopione || 0) >= 1 },
     { id: 'grzybiarz', rzadkosc: 'rzadkie', nazwa: 'Grzybiarz', opis: 'Świeci, więc pewnie niejadalny. Słusznie nie sprawdzasz.' },
+    { id: 'nietoperze', rzadkosc: 'zwykle', nazwa: 'Kto tu świeci?', opis: 'Spłoszyłeś nietoperze. One ciebie też.' },
+    { id: 'znalazca', rzadkosc: 'rzadkie', nazwa: 'Znalazca', opis: 'Pierwszy okaz w gablotce. Bronek już go odkurza.', test: s => Object.keys(s.gablotka || {}).length >= 1 },
+    { id: 'geoda', rzadkosc: 'rzadkie', nazwa: 'Co jest w środku?', opis: 'Rozbiłeś geodę. Teraz chcesz następną.', test: s => (s.rozbiteGeody || 0) >= 1 },
     { id: 'lancuch', rzadkosc: 'epickie', nazwa: 'Reakcja łańcuchowa', opis: 'Jeden ładunek odpalił drugi. Bronek słyszał to w budce.' },
     { id: 'prawa_reka', rzadkosc: 'epickie', nazwa: 'Prawa ręka Bronka', opis: 'Dziesięć zleceń. Bronek prawie się uśmiechnął.', test: s => (s.wykonaneZlecenia || 0) >= 10 },
     { id: 'kolekcjoner', rzadkosc: 'epickie', nazwa: 'Kolekcjoner', opis: 'Piętnaście surowców w atlasie. Półki się uginają.', test: s => odkryte(s) >= 15 },
@@ -35,6 +39,7 @@ export const OSIAGNIECIA = [
     { id: 'diament', rzadkosc: 'epickie', nazwa: 'Diamenty są wieczne', opis: 'Pierwszy diament. Plecak nagle jakby lżejszy.', test: s => !!(s.odkryte || {})[16] },
     { id: 'magnat', rzadkosc: 'legendarne', nazwa: 'Magnat górniczy', opis: 'Wszystkie kopalnie są twoje. Podatki też.', test: s => s.kopalnie.length >= MINES.length },
     { id: 'kilof_ostateczny', rzadkosc: 'legendarne', nazwa: 'Kilof ostateczny', opis: 'Diamentowy kilof. Skała już się boi.', test: s => s.kilof >= 5 },
+    { id: 'muzeum', rzadkosc: 'legendarne', nazwa: 'Dyrektor muzeum', opis: 'Gablotka pełna. Bronek chce sprzedawać bilety.', test: s => Object.keys(s.gablotka || {}).length >= ZNALEZISKA.length },
     { id: 'atlas', rzadkosc: 'legendarne', nazwa: 'Chodzący atlas', opis: 'Każdy surowiec odkryty. Geolodzy proszą o autograf.', test: s => odkryte(s) >= MINERALY.length }
 ];
 

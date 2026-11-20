@@ -3,13 +3,15 @@
 // ------------------------------------------------------------
 import * as THREE from '../lib/three/three.module.js';
 import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT, WORLD_X, WORLD_Z } from './config.js';
-import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, MUSHROOM, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
+import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, MUSHROOM, FOSSIL, GEODE, CHEST, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
 import { MINES, charakter } from './mines.js';
 import { MINERALY, RODZAJE, PRODUKTY } from './minerals.js';
 import { OSIAGNIECIA, RZADKOSCI, sprawdzOsiagniecia, przyznaj } from './achievements.js';
 import { createParticles } from './particles.js';
+import { createBats } from './bats.js';
+import { ZNALEZISKA, GRUPY, znajdz, otworzSkrzynke, rozbijGeode } from './finds.js';
 import { generateMine, applyChanges } from './mine.js';
-import { computeLight } from './light.js';
+import { computeLight, SOURCES } from './light.js';
 import { shaken, pulled, landingY, isHanging } from './cavein.js';
 import { findWater, settleWater } from './water.js';
 import { blast, BLAST_DANGER, BLAST_SHAKE } from './blast.js';
@@ -143,9 +145,12 @@ let pochodnie = 0;
 function zmienBlok(x, y, z, id) { zmienBloki([[x, y, z, id]]); }
 function zmienBloki(lista) {
     if (!lista.length) return;
-    let x1 = 1e9, y1 = 1e9, z1 = 1e9, x2 = -1, y2 = -1, z2 = -1, swiatlo = pochodnie > 0;
+    let x1 = 1e9, y1 = 1e9, z1 = 1e9, x2 = -1, y2 = -1, z2 = -1, swiatlo = false;
     for (const [x, y, z, id] of lista) {
-        if (id === TORCH || world.get(x, y, z) === TORCH) swiatlo = true;
+        // Światło trzeba przeliczyć tylko wtedy, gdy zmiana dotyka źródła
+        // światła albo miejsca, do którego światło dochodzi.
+        if (!swiatlo) swiatlo = !!(SOURCES[id] || SOURCES[world.get(x, y, z)] || world.getLight(x, y, z) || world.getLight(x + 1, y, z) || world.getLight(x - 1, y, z)
+            || world.getLight(x, y + 1, z) || world.getLight(x, y - 1, z) || world.getLight(x, y, z + 1) || world.getLight(x, y, z - 1));
         world.set(x, y, z, id);
         zmiany[world.index(x, y, z)] = id;
         if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y; if (z < z1) z1 = z; if (z > z2) z2 = z;
@@ -195,6 +200,7 @@ function wczytajKopalnie() {
     player = new Player(world);
     naPowierzchnie();
     ustawPowierzchnie();
+    nietoperze.reset(world, kopalnia.komory);
 }
 
 // ---------- Życie na powierzchni: skupnik Bronek i chmury ----------
@@ -224,6 +230,9 @@ function ustawPowierzchnie() {
     chmury.position.set(WORLD_X / 2, kopalnia.groundY, WORLD_Z / 2);
 }
 let okazja = 'powitanie';      // co Bronek powie przy następnym otwarciu skupu
+
+const nietoperze = createBats();
+scene.add(nietoperze.group);
 
 // ---------- Cząsteczki: odłamki, iskry, krople, dym ----------
 const czastki = createParticles();
@@ -344,7 +353,7 @@ function odswiezHud() {
 
 // ---------- Sklep ----------
 let sklepOtwarty = false;
-let atlasOtwarty = false, ksiegaOtwarta = false, kwestiaTeraz = '';
+let atlasOtwarty = false, ksiegaOtwarta = false, gablotkaOtwarta = false, kwestiaTeraz = '', wynikGeody = '';
 // Lista surowców z ikonami: [id, liczba] -> kafelki.
 const kafelki = lista => lista.map(([id, n]) => `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('');
 // Składniki przepisu: zielone, gdy są, czerwone, gdy brakuje.
@@ -393,6 +402,11 @@ function rysujSklep() {
         <div class="wiersz"><div><small>Skup nie bierze surowców potrzebnych na następny kilof, lampę i zlecenia — odkłada je do składu.</small></div>
             <button data-sprzedaj ${wart ? '' : 'disabled'}>Sprzedaj wszystko (+${wart})</button></div>
         ${sklad.length ? `<div class="wiersz"><div></div><button data-sklad>Sprzedaj też skład (+${eko.wartoscSkladu(stan)})</button></div>` : ''}
+        ${eko.ileSurowca(stan, GEODE) || wynikGeody ? `<h2>Geody</h2>
+        <div class="wiersz"><div class="zlecenie"><img src="${ikonaBloku(GEODE)}"><div><b>Masz ${eko.ileSurowca(stan, GEODE)}</b>
+            <small>Z wierzchu zwykły kamień. Co jest w środku, okaże się po rozbiciu.</small></div></div>
+            <button data-geoda ${eko.ileSurowca(stan, GEODE) ? '' : 'disabled'}>Rozbij geodę</button></div>
+        ${wynikGeody ? `<p class="kwestia">${wynikGeody}</p>` : ''}` : ''}
         <h2>Piec hutniczy</h2>
         ${PRODUKTY.map(p => { const ile = eko.ileWytopic(stan, p.klucz), mam = eko.ileSurowca(stan, p.id); return `<div class="wiersz"><div class="zlecenie"><img src="${ikony[p.klucz]}"><div><b>${p.nazwa}</b>${mam ? ` · masz ${mam}` : ''}
             <small>Wart ${p.wartosc} monet za sztukę</small><div class="przepis">Na sztukę: ${przepisHtml(p.z)}</div></div></div>
@@ -412,6 +426,12 @@ function rysujSklep() {
         <div class="wiersz"><div>Odkryte: <b>${MINERALY.filter(m => stan.odkryte?.[m.id]).length}/${MINERALY.length}</b><small>Każda kopalnia ma własne skały i surowce.</small></div>
             <button data-atlas>${atlasOtwarty ? 'Zwiń' : 'Pokaż'}</button></div>
         ${atlasOtwarty ? atlasHtml() : ''}
+        <h2>Gablotka znalezisk</h2>
+        <div class="wiersz"><div>Okazy: <b>${ZNALEZISKA.filter(z => stan.gablotka?.[z.id]).length}/${ZNALEZISKA.length}</b><small>Skamieniałości w skale, stare skrzynki w komorach, kryształy w geodach.</small></div>
+            <button data-gablotka>${gablotkaOtwarta ? 'Zwiń' : 'Pokaż'}</button></div>
+        ${gablotkaOtwarta ? Object.entries(GRUPY).map(([g, tytul]) => `<h3>${tytul}</h3><div class="atlas ksiega">${ZNALEZISKA.filter(z => z.grupa === g).map(z => stan.gablotka?.[z.id]
+            ? `<div><b>${z.nazwa}</b><small>${stan.gablotka[z.id] > 1 ? stan.gablotka[z.id] + ' szt. · ' : ''}${z.nagroda} monet</small><span>${z.opis}</span></div>`
+            : '<div class="nieznany"><b>???</b><small>jeszcze nie znalezione</small></div>').join('')}</div>`).join('') : ''}
         <h2>Księga osiągnięć</h2>
         <div class="wiersz"><div>Zdobyte: <b>${OSIAGNIECIA.filter(o => stan.osiagniecia?.[o.id]).length}/${OSIAGNIECIA.length}</b></div>
             <button data-ksiega>${ksiegaOtwarta ? 'Zwiń' : 'Pokaż'}</button></div>
@@ -458,6 +478,7 @@ function jedzWinda(i) {
 function powiedz(co) { kwestiaTeraz = kwestia(co); }
 function otworzSklep() {
     sklepOtwarty = true; myszWcisnieta = false; $('dotyk').classList.remove('widoczne'); $('sklep').hidden = false;
+    wynikGeody = '';
     powiedz(okazja === 'powitanie' && !eko.ileWPlecaku(stan) && !Object.keys(stan.sklad || {}).length ? 'pusto' : okazja);
     okazja = 'powitanie';
     rysujSklep(); document.exitPointerLock?.();
@@ -477,6 +498,15 @@ $('sklep').addEventListener('click', e => {
     else if ('sklad' in d) { const z = eko.sprzedajSklad(stan); stuk(2.2); komunikat('Sprzedano skład za ' + z + ' monet'); }
     else if ('atlas' in d) atlasOtwarty = !atlasOtwarty;
     else if ('ksiega' in d) ksiegaOtwarta = !ksiegaOtwarta;
+    else if ('gablotka' in d) gablotkaOtwarta = !gablotkaOtwarta;
+    else if ('geoda' in d) {
+        const w = rozbijGeode(stan, GEODE, MINES[stan.kopalnia].rudy);
+        if (w) {
+            stuk(0.7, 0.4, 0.2); setTimeout(() => stuk(3, 0.2, 0.2), 150);
+            const lista = Object.entries(w.zawartosc).map(([id, n]) => `${n} × ${BLOCKS[id].nazwa}`).join(', ') || 'sam pył';
+            wynikGeody = `<b>W środku:</b> ${lista} (warte ${w.wartosc} monet)${w.krysztal ? ` oraz <b>${w.krysztal.okaz.nazwa}</b> do gablotki (+${w.krysztal.monety} monet)` : ''}.`;
+        }
+    }
     else if (d.przetop) { const n = eko.przetop(stan, d.przetop, +d.ile || 1); if (n) { stuk(0.5, 0.3, 0.5); komunikat(`Wytopiono: ${n} × ${BLOCKS[PRODUKTY.find(p => p.klucz === d.przetop).id].nazwa}`); } }
     else if (d.wytworz) { if (eko.wytworzZapas(stan, d.wytworz)) stuk(1.6); }
     else if (d.kup) { if (eko.kupUlepszenie(stan, d.kup)) { stuk(1.6); powiedz('zakup'); } }
@@ -842,6 +872,12 @@ function kopanie(dt) {
                 poWstrzasie(hit.x, hit.y, hit.z);
                 sprawdzWode(hit.x, hit.y, hit.z);
                 odlamki(hit.x, hit.y, hit.z, hit.id, 12);
+                if (hit.id === FOSSIL || hit.id === CHEST) {
+                    const w = hit.id === FOSSIL ? znajdz(stan, 'skamienialosc') : otworzSkrzynke(stan);
+                    komunikat(`${w.nowe ? 'Nowe znalezisko' : 'Znalezisko'}: ${w.okaz.nazwa} (+${w.monety} monet)${w.zapas ? ` i ${eko.ZAPASY[w.zapas].nazwa.toLowerCase()} +${w.ile}` : ''}`, 4500);
+                    czastki.emit(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5, { n: 16, kolor: [1, 0.85, 0.3], obszar: 0.9, rozrzut: 2.5, vy: 3.5, zycie: 0.9, rozmiar: 0.07 });
+                    stuk(2.4, 0.2, 0.15); zapisz();
+                }
                 if (eko.dodajUrobek(stan, hit.id)) { komunikat('+1 ' + b.nazwa); zapisz(); }
                 stuk(0.6, 0.4); odswiezHud();
                 postep = 0; cel = null;
@@ -894,6 +930,10 @@ function klatka(dt) {
             if (kroki > 2.2) { kroki = 0; if (player.inWater) stuk(1.6, 0.08, 0.12); else stuk(0.3 + Math.random() * 0.12, 0.09, 0.05); }
         }
         if (player.pos.y <= kopalnia.shaft.bottomY + 0.6) zdobadz('dno');
+        nietoperze.update(dt, player.eye(), eko.poziomPaliwa(stan) > 0, () => {
+            for (let i = 0; i < 3; i++) setTimeout(() => stuk(6 + Math.random() * 3, 0.07, 0.035), i * 90);
+            zdobadz('nietoperze');
+        });
         if (!stan.osiagniecia?.grzybiarz && player.touches(id => id === MUSHROOM)) zdobadz('grzybiarz');
 
         // Lina ratunkowa: przytrzymaj R.
@@ -985,6 +1025,6 @@ window.__gra = {
     start() { bezMyszy = true; zlapMysz(); }, palce, dotyk: DOTYK, wybierz, postaw, zapisz,
     get pochodnie() { return pochodnie; }, get oddech() { return oddech; }, get spadki() { return spadki.length + lecace.length; },
     get przeplyw() { return !!przeplyw; }, kop(x, y, z) { zmienBlok(x, y, z, AIR); sprzatnijOsierocone(x, y, z, 1); poWstrzasie(x, y, z); sprawdzWode(x, y, z); },
-    akcjaE, get lonty() { return lonty.length; }, npc, zdobadz, omdlenie, komenda: wykonajKomende, otworzSklep,
+    akcjaE, get lonty() { return lonty.length; }, npc, zdobadz, omdlenie, nietoperze, komenda: wykonajKomende, otworzSklep,
     mysz(v) { myszWcisnieta = v; }, klawisz(k, v) { v ? klawisze.add(k) : klawisze.delete(k); }
 };

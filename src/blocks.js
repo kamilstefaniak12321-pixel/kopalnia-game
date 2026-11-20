@@ -15,7 +15,8 @@ export const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SLATE = 4, BASALT = 5,
     SILVER = 12, GOLD = 13, EMERALD = 14, RUBY = 15, DIAMOND = 16,
     // Drabiny stawiane przez gracza: przy ścianie -x, +x, -z, +z.
     LADDER_W = 17, LADDER_E = 18, LADDER_N = 19, LADDER_S = 20, TORCH = 21,
-    UNSTABLE = 22, RUBBLE = 23, WATER = 24, PROP = 25, DYNAMITE = 26, MUSHROOM = 54;
+    UNSTABLE = 22, RUBBLE = 23, WATER = 24, PROP = 25, DYNAMITE = 26, MUSHROOM = 54,
+    FOSSIL = 55, GEODE = 56, CHEST = 57;
 
 function blok(nazwa, twardosc, poziom, wartosc, tekstury, extra = {}) {
     const t = typeof tekstury === 'string' ? [tekstury, tekstury, tekstury] : tekstury;
@@ -61,6 +62,12 @@ for (const p of PRODUKTY) {
     BLOCKS[p.id] = blok(p.nazwa, 1, poziom, p.wartosc, p.klucz, { staly: true, produkt: true });
     M[p.klucz] = p.id;
 }
+
+// Znaleziska (src/finds.js). "cenny" - dynamit tego nie rusza, trzeba
+// wykopać kilofem. Geoda trafia do plecaka i rozbija się ją w skupie.
+BLOCKS[FOSSIL] = blok('Skamieniałość', 1.6, 0, 0, 'skamielina', { cenny: true });
+BLOCKS[GEODE] = blok('Geoda', 2.0, 0, 15, 'geoda', { cenny: true });
+BLOCKS[CHEST] = blok('Stara skrzynka', 1.0, 0, 0, ['skrzynka_gora', 'skrzynka', 'skrzynka_gora'], { cenny: true });
 
 // Kierunek ściany, o którą opiera się drabina: [dx, dz].
 export const WALLS = [[-1, 0], [1, 0], [0, -1], [0, 1]];

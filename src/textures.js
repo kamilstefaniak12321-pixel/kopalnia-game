@@ -13,7 +13,8 @@ const S = TILE;
 // Kolejność w atlasie.
 export const TILE_NAMES = ['trawa_gora', 'trawa_bok', 'ziemia', 'kamien', 'lupek', 'bazalt',
     'lita_skala', 'deski', 'drabina', 'pochodnia', 'krucha', 'rumosz', 'stempel', 'dynamit',
-    ...SKALY.map(r => r.klucz), ...MINERALY.map(r => r.klucz), 'grzyb', ...PRODUKTY.map(r => r.klucz)];
+    ...SKALY.map(r => r.klucz), ...MINERALY.map(r => r.klucz), 'grzyb', ...PRODUKTY.map(r => r.klucz),
+    'skamielina', 'geoda', 'skrzynka', 'skrzynka_gora'];
 // Tekstury z przezroczystym tłem (cienkie rzeczy i ikony przedmiotów).
 export const PRZEZROCZYSTE = new Set(['drabina', 'pochodnia', 'stempel', 'dynamit', 'grzyb', ...PRODUKTY.map(r => r.klucz)]);
 export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
@@ -270,6 +271,49 @@ function sztabka(kolor) {
     return buf;
 }
 
+function skamielina() {
+    // Amonit w wapieniu: spirala z jasnymi żeberkami.
+    const buf = makeTile('wapien');
+    for (let t = 0; t < 520; t++) {
+        const a = t * 0.06, rad = 2 + a * 1.25;
+        if (rad > 24) break;
+        const x = Math.round(32 + Math.cos(a) * rad), y = Math.round(33 + Math.sin(a) * rad), zebro = t % 9 < 2;
+        for (let d = 0; d < 3; d++) {
+            const px = Math.round(x + Math.cos(a) * d), py = Math.round(y + Math.sin(a) * d), k = zebro ? 1.15 : d === 0 ? 0.5 : 0.72;
+            put(buf, px, py, 150 * k, 128 * k, 96 * k);
+        }
+    }
+    return buf;
+}
+function geoda() {
+    // Okrągła, guzowata bryła w skale z pęknięciem, w którym coś błyszczy.
+    const buf = makeTile('kamien');
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const dx = x - 32, dy = y - 32, d = Math.hypot(dx, dy) + (vnoise(x, y, 8, 61) - 0.5) * 7;
+        if (d > 22) continue;
+        if (d > 20) { mul(buf, x, y, 0.5); continue; }
+        const k = 0.75 + vnoise(x, y, 16, 62) * 0.45 + (dx + dy < -14 ? 0.18 : dx + dy > 16 ? -0.2 : 0);
+        put(buf, x, y, 92 * k, 84 * k, 80 * k);
+        const szpara = Math.abs(dx - Math.sin(y * 0.35) * 3);
+        if (szpara < 2.2 && Math.abs(dy) < 13) put(buf, x, y, ...(hash2(x, y, 63) > 0.55 ? [214, 150, 255] : hash2(x, y, 64) > 0.5 ? [150, 90, 220] : [70, 40, 110]));
+    }
+    return buf;
+}
+function skrzynka(gora) {
+    // Stara skrzynka: ciemne deski w okuciach, z przodu zamek.
+    const buf = new Uint8ClampedArray(S * S * 4);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        let k = 0.8 + vnoise(x, (y * 5) % S, 16, 66) * 0.25;
+        if (x % 16 === 0) k *= 0.6;
+        let c = [128, 88, 48];
+        const okucie = x < 5 || x >= S - 5 || y < 5 || y >= S - 5 || (!gora && y >= 20 && y < 25);
+        if (okucie) { c = [86, 88, 96]; k = 0.8 + hash2(x >> 1, y >> 1, 67) * 0.35; if (x === 4 || y === 4 || x === S - 5 || y === S - 5) k *= 0.6; }
+        if (!gora && x >= 27 && x < 37 && y >= 17 && y < 31) { c = [214, 180, 70]; k = x === 27 || y === 30 ? 0.6 : 1; if (x >= 31 && x < 33 && y >= 23 && y < 28) k = 0.25; }
+        put(buf, x, y, c[0] * k, c[1] * k, c[2] * k);
+    }
+    return buf;
+}
+
 function pochodnia() {
     const buf = new Uint8ClampedArray(S * S * 4);   // przezroczyste tło
     for (let y = 26; y < S; y++) for (let x = 28; x < 36; x++) {           // trzonek
@@ -309,6 +353,9 @@ export function makeTile(name) {
     const sk = SKALY.find(r => r.klucz === name);
     if (sk) return skala(sk.kolor, 40 + sk.id, sk.wyglad);
     if (name === 'grzyb') return grzyb();
+    if (name === 'skamielina') return skamielina();
+    if (name === 'geoda') return geoda();
+    if (name === 'skrzynka' || name === 'skrzynka_gora') return skrzynka(name === 'skrzynka_gora');
     const pr = PRODUKTY.find(r => r.klucz === name);
     if (pr) return sztabka(pr.kolor);
     const su = MINERALY.find(r => r.klucz === name);

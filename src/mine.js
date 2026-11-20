@@ -7,7 +7,7 @@
 import { WORLD_X, WORLD_Z, SURFACE_AIR } from './config.js';
 import { mulberry32, noise2 } from './rng.js';
 import { charakter } from './mines.js';
-import { AIR, GRASS, DIRT, BEDROCK, PLANKS, LADDER, UNSTABLE, WATER, MUSHROOM, BLOCKS, isSolid, isHostRock } from './blocks.js';
+import { AIR, GRASS, DIRT, BEDROCK, PLANKS, LADDER, UNSTABLE, WATER, MUSHROOM, FOSSIL, GEODE, CHEST, BLOCKS, isSolid, isHostRock } from './blocks.js';
 
 export class World {
     constructor(w, h, d) {
@@ -71,6 +71,7 @@ export function generateMine(def, seed) {
 
     // Kopanie korytarzy: nie ruszamy stałych bloków ani płytkiej ziemi.
     const tunel = [];   // komórki chodników - przy nich dosypiemy rudy
+    const komory = [];  // środki komór - tam stoją skrzynki i wiszą nietoperze
     function carve(x, y, z) {
         if (x < 2 || z < 2 || x > W - 3 || z > D - 3 || y < 1 || y > groundY - 4) return;
         const id = world.get(x, y, z);
@@ -84,7 +85,7 @@ export function generateMine(def, seed) {
                     const k = (dx * dx + dz * dz) / (rx * rx) + (dy * dy) / (ry * ry);
                     if (k <= 1 + (rnd() - 0.5) * 0.3) carve(x + dx, y + dy, z + dz);
                 }
-        tunel.push([x, y, z]);
+        tunel.push([x, y, z]); komory.push([x, y, z]);
     }
     function chodnik(x, y, z, dir, len, glebia) {
         for (let i = 0; i < len; i++) {
@@ -206,6 +207,24 @@ export function generateMine(def, seed) {
         }
     }
 
+    // --- 6f. Znaleziska: skamieniałości i geody w litej skale, stare
+    //         skrzynki na dnie komór ---
+    for (let i = 0; i < 6 + Math.floor(def.depth / 18); i++) {
+        const x = ri(3, W - 4), y = ri(3, groundY - 6), z = ri(3, D - 4);
+        if (isHostRock(world.get(x, y, z))) world.set(x, y, z, FOSSIL);
+    }
+    for (let i = 0; i < 8 + Math.floor(def.depth / 9); i++) {
+        const x = ri(3, W - 4), y = ri(3, groundY - 12), z = ri(3, D - 4);
+        if (isHostRock(world.get(x, y, z))) world.set(x, y, z, GEODE);
+    }
+    for (let i = 0, postawione = 0; i < 30 && postawione < 3 + Math.floor(def.depth / 40); i++) {
+        let [x, y, z] = komory[ri(0, komory.length - 1)];
+        x += ri(-1, 1); z += ri(-1, 1);
+        while (y > 1 && world.get(x, y - 1, z) === AIR) y--;
+        if (world.get(x, y, z) !== AIR || !world.solid(x, y - 1, z) || BLOCKS[world.get(x, y - 1, z)].staly) continue;
+        world.set(x, y, z, CHEST); postawione++;
+    }
+
     // --- 7. Powierzchnia: szalunek wokół szybu i budka skupu ---
     for (let dz = -1; dz <= 2; dz++) for (let dx = -1; dx <= 2; dx++) {
         const wSzybie = dx >= 0 && dx <= 1 && dz >= 0 && dz <= 1;
@@ -221,7 +240,7 @@ export function generateMine(def, seed) {
     world.set(sx + 3, gy + 4, sz, BEDROCK);                                                               // komin pieca
 
     return {
-        world, groundY, seed, zbiorniki, poziomy,
+        world, groundY, seed, zbiorniki, poziomy, komory,
         spawn: { x: cx - 3.5, y: groundY + 1, z: cz + 1 },
         shaft: { x: cx, z: cz, bottomY },
         shop: { x: sx + 0.5, z: sz + 2 },

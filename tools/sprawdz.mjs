@@ -453,6 +453,7 @@ import { SOURCES } from '../src/light.js';
     assert.equal(przyznaj(a, 'zawal').nazwa, 'Kask się przydał'); assert.equal(przyznaj(a, 'zawal'), null); assert.equal(przyznaj(a, 'nie_ma'), null);
     a.kasa = 6000; a.kilof = 5; a.kopalnie = [0, 1, 2, 3, 4]; a.wykonaneZlecenia = 10; a.wytopione = 1;
     for (const m of MINERALY) a.odkryte[m.id] = true;
+    a.rozbiteGeody = 1; a.gablotka = Object.fromEntries(ZNALEZISKA.map(z => [z.id, 1]));
     sprawdzOsiagniecia(a);
     const brak = OSIAGNIECIA.filter(o => !a.osiagniecia[o.id]);
     assert.ok(brak.every(o => !o.test), 'zostały tylko osiągnięcia za zdarzenia');
@@ -470,6 +471,69 @@ import { SOURCES } from '../src/light.js';
     assert.ok(w.light.some(l => l === SOURCES[MUSHROOM]));
     assert.equal(w.get(Math.floor(m.komin.x), m.komin.y - 1, Math.floor(m.komin.z)), BEDROCK, 'komin stoi na dachu budki');
     ok++; console.log('  ok  piec i stopy, osiągnięcia (' + OSIAGNIECIA.length + '), świecące grzyby');
+}
+
+// --- Znaleziska ---
+import { ZNALEZISKA, GRUPY, znajdz, otworzSkrzynke, rozbijGeode } from '../src/finds.js';
+import { FOSSIL, GEODE, CHEST } from '../src/blocks.js';
+{
+    const rnd = mulberry32(11);
+    assert.equal(new Set(ZNALEZISKA.map(z => z.id)).size, ZNALEZISKA.length);
+    for (const z of ZNALEZISKA) assert.ok(z.grupa in GRUPY && z.waga > 0 && z.nagroda > 0 && z.opis.length > 10, z.id);
+    for (const g of Object.keys(GRUPY)) assert.ok(ZNALEZISKA.filter(z => z.grupa === g).length >= 3, g);
+    // Pierwszy okaz: pełna nagroda; kolejny taki sam: ćwierć.
+    const s = eko.nowyStan();
+    const a = znajdz(s, 'skamienialosc', () => 0);
+    assert.ok(a.nowe && a.monety === a.okaz.nagroda && s.kasa === a.monety && s.gablotka[a.okaz.id] === 1);
+    const b = znajdz(s, 'skamienialosc', () => 0);
+    assert.ok(!b.nowe && b.okaz.id === a.okaz.id && b.monety === Math.round(a.okaz.nagroda / 4) && s.gablotka[a.okaz.id] === 2);
+    // Rzadkie okazy trafiają się rzadko, ale da się zebrać całą grupę.
+    const licz = {}; const t = eko.nowyStan();
+    for (let i = 0; i < 3000; i++) { const w = znajdz(t, 'skamienialosc', rnd); licz[w.okaz.id] = (licz[w.okaz.id] || 0) + 1; assert.equal(w.okaz.grupa, 'skamienialosc'); }
+    assert.equal(Object.keys(licz).length, ZNALEZISKA.filter(z => z.grupa === 'skamienialosc').length);
+    assert.ok(licz.jajo < licz.amonit / 4, 'jajo dinozaura jest rzadkie: ' + licz.jajo + ' / ' + licz.amonit);
+    // Skrzynka: okaz "stare" i zapasy.
+    const c = eko.nowyStan(), przed = c.drabiny + c.pochodnie + c.stemple + c.dynamit;
+    const sk = otworzSkrzynke(c, rnd);
+    assert.ok(sk.okaz.grupa === 'stare' && c.drabiny + c.pochodnie + c.stemple + c.dynamit === przed + sk.ile && sk.ile > 0);
+    // Geoda: trafia do plecaka, skup jej nie sprzedaje, w środku są cenne surowce z kopalni.
+    const g = eko.nowyStan();
+    assert.equal(rozbijGeode(g, GEODE, MINES[0].rudy, rnd), null, 'bez geody nie ma czego rozbijać');
+    assert.ok(eko.dodajUrobek(g, GEODE) && eko.dodajUrobek(g, GEODE));
+    assert.equal(eko.sprzedajWszystko(g), 0); assert.equal(eko.ileSurowca(g, GEODE), 2, 'geody zostają w składzie');
+    let krysztaly = 0;
+    for (let i = 0; i < 2; i++) {
+        const w = rozbijGeode(g, GEODE, MINES[0].rudy, rnd);
+        const ile = Object.values(w.zawartosc).reduce((x, y) => x + y, 0);
+        assert.ok(ile >= 2 && ile <= 4 && w.wartosc > 0);
+        for (const id of Object.keys(w.zawartosc)) {
+            assert.ok(MINES[0].rudy.some(r => r[0] === +id) && BLOCKS[id].rodzaj !== 'paliwo' && BLOCKS[id].poziom <= 1, BLOCKS[id].nazwa);
+            assert.ok(g.sklad[id] > 0 && g.odkryte[id]);
+        }
+        if (w.krysztal) krysztaly++;
+    }
+    assert.equal(eko.ileSurowca(g, GEODE), 0); assert.equal(g.rozbiteGeody, 2);
+    const h = eko.nowyStan(); h.sklad[GEODE] = 400; let zKrysztalem = 0;
+    for (let i = 0; i < 400; i++) if (rozbijGeode(h, GEODE, MINES[2].rudy, rnd).krysztal) zKrysztalem++;
+    assert.ok(zKrysztalem > 80 && zKrysztalem < 160, 'kryształ w mniej więcej co trzeciej geodzie: ' + zKrysztalem);
+    // W kopalniach: są wszystkie trzy rodzaje, skrzynki stoją na twardym dnie, dynamit ich nie rusza.
+    for (const def of MINES) {
+        const m = generateMine(def, 13), w = m.world, n = { [FOSSIL]: 0, [GEODE]: 0, [CHEST]: 0 };
+        for (let i = 0; i < w.data.length; i++) if (w.data[i] in n) {
+            n[w.data[i]]++;
+            if (w.data[i] === CHEST) { const x = i % w.w, z = Math.floor(i / w.w) % w.d, y = Math.floor(i / (w.w * w.d)); assert.ok(w.solid(x, y - 1, z), 'skrzynka stoi na dnie'); }
+        }
+        assert.ok(n[FOSSIL] >= 4 && n[GEODE] >= 6 && n[CHEST] >= 2, def.nazwa + ': ' + JSON.stringify(n));
+        assert.ok(m.komory.length >= 10);
+    }
+    const bw = new World(12, 12, 12); bw.data.fill(STONE);
+    bw.set(6, 6, 6, DYNAMITE); bw.set(7, 6, 6, FOSSIL); bw.set(6, 7, 6, GEODE); bw.set(5, 6, 6, CHEST);
+    const plan = blast(bw, 6, 6, 6, () => true, () => true);
+    assert.ok(!plan.usun.some(([x, y, z]) => [FOSSIL, GEODE, CHEST].includes(bw.get(x, y, z))), 'wybuch zostawia znaleziska');
+    // Osiągnięcia ze znalezisk.
+    assert.ok(sprawdzOsiagniecia(s).some(o => o.id === 'znalazca'));
+    assert.ok(sprawdzOsiagniecia(g).some(o => o.id === 'geoda'));
+    ok++; console.log('  ok  znaleziska: ' + ZNALEZISKA.length + ' okazów, skrzynki, geody');
 }
 
 // --- Wersja i pliki aplikacji ---

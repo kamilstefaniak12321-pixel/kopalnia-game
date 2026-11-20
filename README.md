@@ -44,6 +44,8 @@ Ze źródeł: `npm install` i `npm start` (okno aplikacji) albo
 | `src/player.js` | ruch gracza, zderzenia, drabina |
 | `src/npc.js` | skupnik Bronek: model, animacje, kwestie |
 | `src/achievements.js` | lista osiągnięć |
+| `src/finds.js` | znaleziska: skamieniałości, skrzynki, geody |
+| `src/bats.js` | nietoperze |
 | `src/particles.js` | cząsteczki: odłamki, iskry, krople, dym |
 | `src/main.js` | pętla gry, kopanie, HUD, sklep |
 | `desktop/` | aplikacja na Windowsa (Electron) |
