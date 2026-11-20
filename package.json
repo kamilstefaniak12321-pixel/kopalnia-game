@@ -1,0 +1,12 @@
+{
+    "name": "kopalnia-game",
+    "version": "0.1.0",
+    "description": "Gra o górniku - proceduralne kopalnie, surowce i ulepszenia",
+    "author": "Kamil",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "node tools/sprawdz.mjs",
+        "start": "python -m http.server 8080"
+    }
+}

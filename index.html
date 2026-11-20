@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kopalnia</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./src/ui.css">
+</head>
+<body>
+    <div id="crosshair">+</div>
+    <div id="postep"><div></div></div>
+
+    <div id="hud">
+        <div id="kasa"></div>
+        <div id="plecak"></div>
+        <div id="glebokosc"></div>
+        <div id="kilof"></div>
+    </div>
+    <div id="urobek"></div>
+    <div id="podpowiedz"></div>
+    <div id="komunikat"></div>
+    <input id="komenda" placeholder="komenda, np. kasa 500" autocomplete="off">
+
+    <div id="start" class="okno">
+        <h1>Kopalnia</h1>
+        <p class="wersja"></p>
+        <p>Zejdź do kopalni, wykop surowce, sprzedaj je na powierzchni<br>i kup lepszy sprzęt oraz nowe kopalnie.</p>
+        <table>
+            <tr><td>W A S D</td><td>ruch</td></tr>
+            <tr><td>Mysz</td><td>rozglądanie, lewy przycisk — kopanie</td></tr>
+            <tr><td>Spacja / Shift</td><td>skok; na drabinie w górę / w dół</td></tr>
+            <tr><td>Ctrl</td><td>bieg</td></tr>
+            <tr><td>E</td><td>skup i sklep (przy budce na powierzchni)</td></tr>
+            <tr><td>R (przytrzymaj)</td><td>lina ratunkowa — powrót na powierzchnię</td></tr>
+            <tr><td>T</td><td>komendy testowe</td></tr>
+        </table>
+        <button id="graj">Graj</button>
+    </div>
+
+    <div id="sklep" class="okno" hidden></div>
+
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
