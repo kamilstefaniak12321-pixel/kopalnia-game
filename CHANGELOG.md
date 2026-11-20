@@ -1,5 +1,17 @@
 # Zmiany
 
+## 0.7.0
+
+- Zlecenia w skupie: do trzech zamówień na konkretne surowce z kupionych
+  kopalni, z nagrodą ponad dwa razy wyższą od zwykłej ceny. Niewygodne
+  zlecenie można wymienić za 10 monet. Skup nie sprzedaje surowców
+  potrzebnych na zlecenia.
+- Skupnik Bronek stoi w budce: oddycha, mruga, wodzi głową za graczem,
+  macha na powitanie, ogląda bryłkę, gdy nikogo nie ma, cieszy się po
+  sprzedaży i zleceniu, czasem drapie się po głowie. W oknie skupu
+  komentuje to, co się właśnie stało.
+- Nad powierzchnią płyną chmury.
+
 ## 0.6.0
 
 - 31 surowców zamiast 8: metale (cyna, ołów, cynk, nikiel, kobalt,

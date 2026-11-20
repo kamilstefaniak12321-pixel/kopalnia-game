@@ -2,7 +2,7 @@
 // GŁÓWNY PLIK GRY: łączy świat, gracza, kopanie, sklep i ekran.
 // ------------------------------------------------------------
 import * as THREE from '../lib/three/three.module.js';
-import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT } from './config.js';
+import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT, WORLD_X, WORLD_Z } from './config.js';
 import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
 import { MINES, charakter } from './mines.js';
 import { MINERALY, RODZAJE } from './minerals.js';
@@ -15,6 +15,7 @@ import { meshChunk } from './mesher.js';
 import { TILE_NAMES, TILE_INDEX, makeTile, makeCrack } from './textures.js';
 import { Player, raycast } from './player.js';
 import * as eko from './economy.js';
+import { createNpc, kwestia } from './npc.js';
 
 const $ = id => document.getElementById(id);
 
@@ -187,7 +188,36 @@ function wczytajKopalnie() {
         rebuildChunk(cx, cy, cz);
     player = new Player(world);
     naPowierzchnie();
+    ustawPowierzchnie();
 }
+
+// ---------- Życie na powierzchni: skupnik Bronek i chmury ----------
+const npc = createNpc();
+scene.add(npc.group);
+const chmury = new THREE.Group();
+{
+    const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, fog: false });
+    for (let i = 0; i < 12; i++) {
+        // Chmura = kilka spłaszczonych pudełek obok siebie.
+        const chmura = new THREE.Group();
+        for (let j = 0, n = 2 + Math.floor(Math.random() * 3); j < n; j++) {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(8 + Math.random() * 10, 2 + Math.random() * 2, 6 + Math.random() * 8), mat);
+            m.position.set(j * 6 - n * 3 + Math.random() * 3, Math.random() * 1.5, Math.random() * 5 - 2.5);
+            chmura.add(m);
+        }
+        chmura.position.set(Math.random() * 400 - 200, 36 + Math.random() * 18, Math.random() * 400 - 200);
+        chmura.userData.v = 0.8 + Math.random() * 0.9;
+        chmury.add(chmura);
+    }
+    scene.add(chmury);
+}
+function ustawPowierzchnie() {
+    // Bronek stoi za ladą budki, twarzą do szybu.
+    npc.group.position.set(kopalnia.shop.x + 2, kopalnia.groundY + 1, kopalnia.shop.z);
+    npc.group.rotation.y = -Math.PI / 2;
+    chmury.position.set(WORLD_X / 2, kopalnia.groundY, WORLD_Z / 2);
+}
+let okazja = 'powitanie';      // co Bronek powie przy następnym otwarciu skupu
 
 // ---------- Ramka i pęknięcia na wskazanym bloku ----------
 const ramka = new THREE.LineSegments(
@@ -261,7 +291,7 @@ function odswiezHud() {
 
 // ---------- Sklep ----------
 let sklepOtwarty = false;
-let atlasOtwarty = false;
+let atlasOtwarty = false, kwestiaTeraz = '';
 // Lista surowców z ikonami: [id, liczba] -> kafelki.
 const kafelki = lista => lista.map(([id, n]) => `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('');
 // Składniki przepisu: zielone, gdy są, czerwone, gdy brakuje.
@@ -291,11 +321,23 @@ function rysujSklep() {
                 : `<button data-kopalnia="${i}" ${stan.kasa < m.cena ? 'disabled' : ''}>Kup za ${m.cena}</button>`;
         return `<div class="wiersz"><div><b>${m.nazwa}</b> (${m.depth} m)<small>${m.opis}</small></div>${przycisk}</div>`;
     }).join('');
+    eko.uzupelnijZlecenia(stan);
+    const zlecenia = stan.zlecenia.map((z, i) => {
+        const mam = Math.min(z.ile, eko.ileSurowca(stan, z.id));
+        return `<div class="wiersz"><div class="zlecenie"><img src="${ikonaBloku(z.id)}"><div><b>${z.ile} × ${BLOCKS[z.id].nazwa}</b>
+            <small>Masz ${mam}/${z.ile} · nagroda <span class="zloto">${z.nagroda} monet</span> (zwykła cena: ${z.ile * BLOCKS[z.id].wartosc})</small></div></div>
+            <div class="przyciski"><button data-oddaj="${i}" ${eko.mozeOddac(stan, i) ? '' : 'disabled'}>Oddaj</button>
+            <button data-wymien="${i}" ${stan.kasa < eko.KOSZT_WYMIANY ? 'disabled' : ''}>Wymień (${eko.KOSZT_WYMIANY})</button></div></div>`;
+    }).join('');
     $('sklep').innerHTML = `<h1>Skup i sklep</h1><div class="stan-kasy">${stan.kasa} monet</div>
+        <p class="kwestia"><b>Bronek:</b> „${kwestiaTeraz}”</p>
+        <h2>Zlecenia Bronka</h2>
+        ${zlecenia || '<p class="maly">Na razie nie ma zleceń.</p>'}
+        <p class="maly">Wykonane zlecenia: ${stan.wykonaneZlecenia || 0}. Surowców na zlecenia skup nie sprzedaje.</p>
         <h2>Urobek</h2>
         <div class="lista-urobku">${kafelki(Object.entries(stan.przedmioty)) || 'Plecak jest pusty.'}</div>
         ${sklad.length ? `<p class="maly">W składzie na powierzchni (wózek i surowce odłożone na ulepszenia):</p><div class="lista-urobku">${kafelki(sklad)}</div>` : ''}
-        <div class="wiersz"><div><small>Skup nie bierze surowców potrzebnych na następny kilof i lampę — odkłada je do składu.</small></div>
+        <div class="wiersz"><div><small>Skup nie bierze surowców potrzebnych na następny kilof, lampę i zlecenia — odkłada je do składu.</small></div>
             <button data-sprzedaj ${wart ? '' : 'disabled'}>Sprzedaj wszystko (+${wart})</button></div>
         ${sklad.length ? `<div class="wiersz"><div></div><button data-sklad>Sprzedaj też skład (+${eko.wartoscSkladu(stan)})</button></div>` : ''}
         <h2>Wyposażenie</h2>
@@ -348,7 +390,13 @@ function jedzWinda(i) {
     stuk(0.4, 0.3, 0.5);
 }
 
-function otworzSklep() { sklepOtwarty = true; myszWcisnieta = false; $('dotyk').classList.remove('widoczne'); $('sklep').hidden = false; rysujSklep(); document.exitPointerLock?.(); }
+function powiedz(co) { kwestiaTeraz = kwestia(co); }
+function otworzSklep() {
+    sklepOtwarty = true; myszWcisnieta = false; $('dotyk').classList.remove('widoczne'); $('sklep').hidden = false;
+    powiedz(okazja === 'powitanie' && !eko.ileWPlecaku(stan) && !Object.keys(stan.sklad || {}).length ? 'pusto' : okazja);
+    okazja = 'powitanie';
+    rysujSklep(); document.exitPointerLock?.();
+}
 function zamknijSklep() { sklepOtwarty = false; $('sklep').hidden = true; zlapMysz(); }
 function zmienKopalnie(i, noweZiarno) {
     stan.kopalnia = i;
@@ -358,11 +406,13 @@ function zmienKopalnie(i, noweZiarno) {
 $('sklep').addEventListener('click', e => {
     const d = e.target.dataset;
     if (!e.target.matches('button')) return;
-    if ('sprzedaj' in d) { const z = eko.sprzedajWszystko(stan); stuk(2.2); komunikat('Sprzedano za ' + z + ' monet'); }
+    if ('sprzedaj' in d) { const z = eko.sprzedajWszystko(stan); stuk(2.2); komunikat('Sprzedano za ' + z + ' monet'); powiedz('sprzedaz'); npc.cheer(); }
+    else if (d.oddaj) { const z = eko.oddajZlecenie(stan, +d.oddaj); if (z) { stuk(2.4); komunikat('Zlecenie wykonane: +' + z + ' monet', 3000); powiedz('zlecenie'); npc.cheer(); } }
+    else if (d.wymien) { if (eko.wymienZlecenie(stan, +d.wymien)) stuk(1.2); }
     else if ('sklad' in d) { const z = eko.sprzedajSklad(stan); stuk(2.2); komunikat('Sprzedano skład za ' + z + ' monet'); }
     else if ('atlas' in d) atlasOtwarty = !atlasOtwarty;
     else if (d.wytworz) { if (eko.wytworzZapas(stan, d.wytworz)) stuk(1.6); }
-    else if (d.kup) { if (eko.kupUlepszenie(stan, d.kup)) stuk(1.6); }
+    else if (d.kup) { if (eko.kupUlepszenie(stan, d.kup)) { stuk(1.6); powiedz('zakup'); } }
     else if (d.zapas) { if (eko.kupZapas(stan, d.zapas)) stuk(1.6); }
     else if (d.urzadzenie) { if (eko.kupUrzadzenie(stan, d.urzadzenie)) stuk(1.6); }
     else if ('wozek' in d) { const n = eko.wyslijUrobek(stan); stuk(1.8); komunikat(`Wózek zabrał ${n} szt. urobku na powierzchnię`, 3000); zapisz(); odswiezHud(); return zamknijSklep(); }
@@ -521,6 +571,7 @@ function wykonajKomende(tekst) {
 // powierzchnię, ale połowa urobku zostaje w kopalni.
 function omdlenie(powod) {
     const strata = eko.zgubPoloweUrobku(stan);
+    okazja = 'wypadek';
     naPowierzchnie(); eko.napelnijLampe(stan);
     oddech = 1; myszWcisnieta = false; linaCzas = 0;
     const z = $('zaciemnienie');
@@ -764,6 +815,9 @@ function klatka(dt) {
         if (linaCzas > 1.5) { naPowierzchnie(); linaCzas = 0; klawisze.delete('KeyR'); palce.lina = false; komunikat('Lina wyciągnęła cię na powierzchnię'); }
     }
 
+    npc.update(dt, player.pos);
+    for (const c of chmury.children) { c.position.x += c.userData.v * dt; if (c.position.x > 200) c.position.x = -200; }
+
     const oko = player.eye();
     camera.position.set(oko.x + (Math.random() - 0.5) * wstrzas * 0.06, oko.y + (Math.random() - 0.5) * wstrzas * 0.06, oko.z);
     camera.rotation.set(player.pitch, player.yaw, 0);
@@ -796,12 +850,13 @@ function klatka(dt) {
     $('oddech').style.display = oddech < 1 ? 'block' : 'none';
     $('oddech').firstElementChild.style.width = Math.round(oddech * 100) + '%';
     $('podwoda').style.opacity = podWoda ? 1 : 0;
+    chmury.visible = npc.group.visible = pod < 1;
     glowica.material.color.setHex(eko.KILOFY[stan.kilof].kolor);
 
     const glebokosc = Math.max(0, Math.floor(kopalnia.groundY + 1 - player.pos.y));
     $('glebokosc').textContent = glebokosc > 0 ? `Głębokość: ${glebokosc} m` : MINES[stan.kopalnia].nazwa + ' — powierzchnia';
     $('podpowiedz').textContent = !gra || sklepOtwarty ? '' : linaCzas > 0.2 ? 'Wciągam linę…'
-        : DOTYK ? '' : przySklepie() ? 'E — skup i sklep' : maSzyb() ? 'E — szyb (winda, wózek)' : player.onLadder ? 'Spacja — w górę, Shift — w dół'
+        : DOTYK ? '' : przySklepie() ? 'E — pogadaj z Bronkiem (skup i sklep)' : maSzyb() ? 'E — szyb (winda, wózek)' : player.onLadder ? 'Spacja — w górę, Shift — w dół'
             : wybrany ? 'Lewy przycisk myszy — postaw' : '';
     if (DOTYK) { $('d-sklep').hidden = !przySklepie() && !maSzyb(); $('d-sklep').textContent = przySklepie() ? 'Sklep' : 'Szyb'; }
     if (performance.now() > komunikatDo) $('komunikat').style.opacity = 0;
@@ -843,6 +898,6 @@ window.__gra = {
     start() { bezMyszy = true; zlapMysz(); }, palce, dotyk: DOTYK, wybierz, postaw, zapisz,
     get pochodnie() { return pochodnie; }, get oddech() { return oddech; }, get spadki() { return spadki.length + lecace.length; },
     get przeplyw() { return !!przeplyw; }, kop(x, y, z) { zmienBlok(x, y, z, AIR); sprzatnijOsierocone(x, y, z, 1); poWstrzasie(x, y, z); sprawdzWode(x, y, z); },
-    akcjaE, get lonty() { return lonty.length; }, komenda: wykonajKomende, otworzSklep,
+    akcjaE, get lonty() { return lonty.length; }, npc, komenda: wykonajKomende, otworzSklep,
     mysz(v) { myszWcisnieta = v; }, klawisz(k, v) { v ? klawisze.add(k) : klawisze.delete(k); }
 };

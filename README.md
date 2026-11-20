@@ -42,6 +42,7 @@ Ze źródeł: `npm install` i `npm start` (okno aplikacji) albo
 | `src/textures.js` | zastępcze tekstury 64x64 rysowane kodem |
 | `src/mesher.js` | zamiana bloków na trójkąty |
 | `src/player.js` | ruch gracza, zderzenia, drabina |
+| `src/npc.js` | skupnik Bronek: model, animacje, kwestie |
 | `src/main.js` | pętla gry, kopanie, HUD, sklep |
 | `desktop/` | aplikacja na Windowsa (Electron) |
 | `android/` | aplikacja na Androida (Capacitor) |

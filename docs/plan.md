@@ -25,6 +25,17 @@
    wytwarzanie sprzętu, atlas; listę można dalej rozszerzać w
    `src/minerals.js`)*
 
+## Pomysły na później
+
+- Przetapianie i stopy (brąz, stal) w piecu na powierzchni.
+- Znaleziska: skamieniałości, geody, stare narzędzia.
+- Życie w kopalni: nietoperze, świecące grzyby, kapiąca woda.
+- Osiągnięcia z komentarzem.
+- Gazy kopalniane i lampa bezpieczeństwa.
+- Własna sztolnia, która nie losuje się od nowa.
+
+Zrobione z tej listy: zlecenia w skupie i skupnik Bronek (0.7.0).
+
 ## Do zrobienia przy okazji
 
 - Tekstury 64x64 od grafików zamiast zastępczych rysowanych kodem.

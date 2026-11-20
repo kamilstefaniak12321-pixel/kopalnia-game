@@ -366,6 +366,50 @@ import { charakter } from '../src/mines.js';
     ok++; console.log('  ok  surowce i minerały: ' + MINERALY.length + ' surowców, ' + SKALY.length + ' nowe skały');
 }
 
+// --- Zlecenia ---
+import { mulberry32 } from '../src/rng.js';
+{
+    const rnd = mulberry32(5), s = eko.nowyStan();
+    eko.uzupelnijZlecenia(s, rnd);
+    assert.equal(s.zlecenia.length, eko.MAX_ZLECEN);
+    assert.equal(new Set(s.zlecenia.map(z => z.id)).size, 3, 'zlecenia na różne surowce');
+    for (const z of s.zlecenia) {
+        assert.ok(MINES[0].rudy.some(r => r[0] === z.id), 'surowiec z kupionej kopalni: ' + BLOCKS[z.id].nazwa);
+        assert.ok(BLOCKS[z.id].poziom <= s.kilof + 1 && z.ile >= 3 && z.ile <= 16);
+        assert.ok(z.nagroda >= 2 * z.ile * BLOCKS[z.id].wartosc, 'nagroda co najmniej podwójna');
+    }
+    // Wiele losowań: nigdy nic spoza zasięgu, a łatwe zlecenia przeważają.
+    let ambitne = 0;
+    for (let i = 0; i < 300; i++) { const t = eko.nowyStan(); const z = eko.noweZlecenie(t, rnd); assert.ok(BLOCKS[z.id].poziom <= 1); if (BLOCKS[z.id].poziom === 1) ambitne++; }
+    assert.ok(ambitne > 30 && ambitne < 130, 'ambitnych około jednej czwartej: ' + ambitne);
+    for (let i = 0; i < 50; i++) { const t = eko.nowyStan(); eko.uzupelnijZlecenia(t, rnd); assert.ok(t.zlecenia.filter(z => BLOCKS[z.id].poziom > 0).length <= 1, 'najwyżej jedno ambitne zlecenie'); }
+    // Oddanie: za mało - nic; dość - surowiec znika (najpierw ze składu), nagroda wpada, pojawia się nowe.
+    const z = s.zlecenia[0], ids = s.zlecenia.map(x => x.id);
+    s.przedmioty[z.id] = z.ile - 1;
+    assert.ok(!eko.mozeOddac(s, 0)); assert.equal(eko.oddajZlecenie(s, 0, rnd), 0);
+    s.sklad[z.id] = 3;
+    // Skup nie sprzedaje surowca na zlecenie.
+    // (ten sam surowiec może być też potrzebny na kilof albo lampę - wtedy odkłada więcej)
+    assert.ok(eko.odlozone(s)[z.id] >= z.ile, 'surowiec zlecenia jest odkładany');
+    eko.sprzedajWszystko(s);
+    const mam = eko.ileSurowca(s, z.id), kasa = s.kasa;
+    assert.ok(mam >= z.ile && !s.przedmioty[z.id], 'odłożone leży w składzie');
+    assert.equal(eko.oddajZlecenie(s, 0, rnd), z.nagroda);
+    assert.equal(s.kasa, kasa + z.nagroda); assert.equal(eko.ileSurowca(s, z.id), mam - z.ile);
+    assert.equal(s.wykonaneZlecenia, 1); assert.equal(s.zlecenia.length, 3);
+    assert.equal(new Set(s.zlecenia.map(x => x.id)).size, 3);
+    // Wymiana: kosztuje, daje inny surowiec, bez monet się nie da.
+    const przed = s.zlecenia[1].id, k2 = s.kasa;
+    assert.ok(eko.wymienZlecenie(s, 1, rnd)); assert.equal(s.kasa, k2 - eko.KOSZT_WYMIANY);
+    assert.notEqual(s.zlecenia[1].id, przed); assert.equal(new Set(s.zlecenia.map(x => x.id)).size, 3);
+    s.kasa = 0; assert.ok(!eko.wymienZlecenie(s, 1, rnd));
+    // Z lepszym kilofem i nowymi kopalniami pojawiają się nowe surowce.
+    const b = eko.nowyStan(); b.kilof = 4; b.kopalnie = [0, 1, 2, 3, 4];
+    const rozne = new Set(); for (let i = 0; i < 400; i++) rozne.add(eko.noweZlecenie(b, rnd).id);
+    assert.ok(rozne.size >= 25, 'zlecenia korzystają z całej listy surowców: ' + rozne.size);
+    ok++; console.log('  ok  zlecenia: losowanie, oddawanie, wymiana, odkładanie surowców');
+}
+
 // --- Wersja i pliki aplikacji ---
 import { readFileSync, existsSync } from 'node:fs';
 import { VERSION } from '../src/config.js';

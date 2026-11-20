@@ -91,3 +91,9 @@ body.dotyk #hud { left: calc(12px + env(safe-area-inset-left)); }
 .atlas small { display: block; color: var(--szare); font-size: 10px; line-height: 1.25; }
 .atlas .nieznany { opacity: .6; } .atlas .nieznany span { display: block; height: 34px; font-size: 26px; color: var(--szare); }
 #urobek { flex-wrap: wrap; justify-content: center; max-width: 56vw; }
+
+/* ---------- Zlecenia i skupnik ---------- */
+.kwestia { text-align: left !important; background: #0006; border-left: 4px solid var(--zloto); padding: 6px 10px; margin: 8px 0 !important; font-size: 14px; }
+.zlecenie { display: flex; align-items: center; gap: 10px; }
+.zlecenie img { margin: 0 !important; flex: none; }
+.zloto { color: var(--zloto); }
