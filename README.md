@@ -35,6 +35,7 @@ Ze źródeł: `npm install` i `npm start` (okno aplikacji) albo
 | --- | --- |
 | `src/config.js` | liczby: rozmiar świata, gracz, prędkości |
 | `src/blocks.js` | bloki: twardość, wymagany kilof, wartość |
+| `src/minerals.js` | tabela wszystkich surowców, minerałów i skał |
 | `src/mines.js` | lista kopalni: głębokość, warstwy skał, rudy, cena |
 | `src/mine.js` | generator kopalni (szyb, chodniki, komory, żyły) |
 | `src/economy.js` | kilofy, plecaki, lampy, sprzedaż i zakupy |

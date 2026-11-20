@@ -1,7 +1,7 @@
 {
     "name": "kopalnia-game",
     "productName": "Kopalnia",
-    "version": "0.5.0",
+    "version": "0.6.0",
     "description": "Gra o górniku - proceduralne kopalnie, surowce i ulepszenia",
     "author": "Kamil",
     "private": true,

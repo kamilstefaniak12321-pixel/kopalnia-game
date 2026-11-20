@@ -1,3 +1,5 @@
+import { MINERALY, SKALY } from './minerals.js';
+
 // ------------------------------------------------------------
 // BLOKI. Każdy blok ma:
 //   nazwa     - nazwa dla gracza
@@ -30,14 +32,11 @@ BLOCKS[BASALT] = blok('Bazalt', 4.5, 4, 0, 'bazalt');
 BLOCKS[BEDROCK] = blok('Lita skała', 1, 99, 0, 'lita_skala', { staly: true });
 BLOCKS[PLANKS] = blok('Szalunek', 1, 99, 0, 'deski', { staly: true });
 BLOCKS[LADDER] = blok('Drabina', 1, 99, 0, 'drabina', { staly: true });
-BLOCKS[COAL] = blok('Węgiel', 1.5, 0, 5, 'wegiel');
-BLOCKS[COPPER] = blok('Miedź', 2.0, 1, 12, 'miedz');
-BLOCKS[IRON] = blok('Żelazo', 2.6, 2, 25, 'zelazo');
-BLOCKS[SILVER] = blok('Srebro', 3.4, 3, 60, 'srebro');
-BLOCKS[GOLD] = blok('Złoto', 3.8, 3, 120, 'zloto');
-BLOCKS[EMERALD] = blok('Szmaragd', 5.0, 4, 250, 'szmaragd');
-BLOCKS[RUBY] = blok('Rubin', 5.5, 4, 400, 'rubin');
-BLOCKS[DIAMOND] = blok('Diament', 7.0, 5, 800, 'diament');
+// Surowce i skały z tabeli (src/minerals.js). M.cyna, M.granit itd.
+// to numery bloków po kluczu.
+export const M = {};
+for (const r of MINERALY) { BLOCKS[r.id] = blok(r.nazwa, r.twardosc, r.poziom, r.wartosc, r.klucz, { rodzaj: r.rodzaj }); M[r.klucz] = r.id; }
+for (const r of SKALY) { BLOCKS[r.id] = blok(r.nazwa, r.twardosc, r.poziom, 0, r.klucz); M[r.klucz] = r.id; }
 for (const id of [LADDER_W, LADDER_E, LADDER_N, LADDER_S]) BLOCKS[id] = blok('Drabina', 1, 99, 0, 'drabina', { staly: true });
 BLOCKS[TORCH] = blok('Pochodnia', 1, 99, 0, 'pochodnia', { staly: true });
 
@@ -66,4 +65,5 @@ export function isSolid(id) { return id !== AIR && id !== WATER && !isThin(id) &
 export function isOpen(id) { return id === AIR || id === WATER; }
 
 // Skały, w których mogą siedzieć żyły surowców.
-export function isHostRock(id) { return id === STONE || id === SLATE || id === BASALT; }
+const HOST = new Set([STONE, SLATE, BASALT, ...SKALY.map(r => r.id)]);
+export function isHostRock(id) { return HOST.has(id); }

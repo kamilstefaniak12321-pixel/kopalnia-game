@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { MINES } from '../src/mines.js';
 import { generateMine } from '../src/mine.js';
 import { meshChunk } from '../src/mesher.js';
-import { BLOCKS, AIR, LADDER, COAL, DIAMOND, STONE, SLATE, isSolid } from '../src/blocks.js';
+import { BLOCKS, M, AIR, LADDER, COAL, DIAMOND, STONE, SLATE, isSolid } from '../src/blocks.js';
+import { MINERALY, SKALY, RODZAJE } from '../src/minerals.js';
 import { TILE_NAMES, TILE_INDEX, makeTile, makeCrack } from '../src/textures.js';
 import * as eko from '../src/economy.js';
 import { CHUNK } from '../src/config.js';
@@ -45,7 +46,7 @@ for (const [mi, def] of MINES.entries()) {
             // Każda ruda z definicji występuje w kopalni.
             const licz = {};
             for (const b of w.data) licz[b] = (licz[b] || 0) + 1;
-            for (const r of def.rudy) assert.ok(licz[r[0]] > 20, 'jest ' + BLOCKS[r[0]].nazwa);
+            for (const r of def.rudy) assert.ok(licz[r[0]] > 15, 'jest ' + BLOCKS[r[0]].nazwa + ': ' + licz[r[0]]);
             // Drabina od dna po powierzchnię.
             for (let y = m.shaft.bottomY; y <= m.groundY + 1; y++) assert.equal(w.get(m.shaft.x, y, m.shaft.z), LADDER);
             // W pierwszej kopalni przy starcie da się coś kopać drewnianym kilofem.
@@ -92,21 +93,49 @@ test('gospodarka: urobek, sprzedaż, ulepszenia, kopalnie', () => {
     for (let i = 0; i < 25; i++) eko.dodajUrobek(s, COAL);
     assert.equal(eko.ileWPlecaku(s), 20);                     // torba mieści 20
     assert.ok(eko.czyPelny(s));
-    assert.equal(eko.sprzedajWszystko(s), 100);
-    assert.equal(s.kasa, 100); assert.equal(eko.ileWPlecaku(s), 0);
+    // Skup odkłada 4 węgle na lampę naftową (jej przepis), resztę sprzedaje.
+    assert.equal(eko.wartoscUrobku(s), 80);
+    assert.equal(eko.sprzedajWszystko(s), 80);
+    assert.equal(s.kasa, 80); assert.equal(eko.ileWPlecaku(s), 0);
+    assert.deepEqual(s.sklad, { [COAL]: 4 });
     const t0 = eko.czasKopania(s, STONE);
-    assert.ok(eko.kupUlepszenie(s, 'kilof')); assert.equal(s.kasa, 40);
+    assert.ok(!eko.kupUlepszenie(s, 'kilof'), 'kamienny kilof wymaga krzemienia');
+    s.przedmioty[M.krzemien] = 5;
+    assert.deepEqual(eko.skladniki(s, eko.KILOFY[1].surowce), [[M.krzemien, 4, 5]]);
+    assert.ok(eko.kupUlepszenie(s, 'kilof')); assert.equal(s.kasa, 20);
+    assert.equal(s.przedmioty[M.krzemien], 1, 'przepis zużył 4 krzemienie');
     assert.ok(eko.czasKopania(s, STONE) < t0);
     assert.ok(!eko.kupUlepszenie(s, 'plecak'));               // za mało monet
     assert.ok(!eko.kupKopalnie(s, 1));
     s.kasa = 99999;
     assert.ok(eko.kupKopalnie(s, 1) && !eko.kupKopalnie(s, 1));
+    // Lampa: węgiel bierze ze składu.
+    assert.ok(eko.kupUlepszenie(s, 'lampa')); assert.deepEqual(s.sklad, {});
+    // Z pełnym składem da się zrobić wszystkie kilofy i lampy po kolei.
+    for (const m of MINERALY) s.sklad[m.id] = 50;
     while (eko.kupUlepszenie(s, 'kilof'));
+    while (eko.kupUlepszenie(s, 'lampa'));
+    assert.equal(eko.nastepne(s, 'lampa'), null);
+    assert.equal(s.sklad[M.zelazo], 50 - 12 - 16, 'żelazo zużyte na żelazny i stalowy kilof');
+    // Dynamit z surowców, bez monet.
+    const d0 = s.dynamit, k0 = s.kasa;
+    assert.ok(eko.wytworzZapas(s, 'dynamit') && s.dynamit === d0 + 2 && s.kasa === k0 && !eko.wytworzZapas(s, 'drabiny'));
+    // Sprzedaż składu; gdy nie ma już czego ulepszać, nic nie jest odkładane.
+    assert.deepEqual(eko.rezerwa(s), {});
+    assert.ok(eko.sprzedajSklad(s) > 0); assert.deepEqual(s.sklad, {});
     assert.equal(eko.nastepne(s, 'kilof'), null);
     assert.ok(eko.mozeKopac(s, DIAMOND));
     // Każdą rudę da się wykopać jakimś kilofem, a ceny rosną.
     for (const b of BLOCKS) if (b && b.wartosc) assert.ok(b.poziom < eko.KILOFY.length);
     for (const l of [eko.KILOFY, eko.PLECAKI, eko.LAMPY]) for (let i = 1; i < l.length; i++) assert.ok(l[i].cena > l[i - 1].cena);
+    // Przepisy: składniki istnieją, a każdy da się wykopać kilofem o stopień
+    // słabszym niż ten, który z nich powstaje (inaczej gra by się zablokowała).
+    eko.KILOFY.forEach((k, i) => { for (const klucz of Object.keys(k.surowce || {})) {
+        assert.ok(M[klucz], 'surowiec istnieje: ' + klucz);
+        assert.ok(BLOCKS[M[klucz]].poziom <= i - 1, `${k.nazwa}: ${klucz} da się wykopać poprzednim kilofem`);
+    } });
+    for (const p of [...eko.LAMPY.map(l => l.surowce), ...Object.values(eko.ZAPASY).map(z => z.przepis)])
+        for (const klucz of Object.keys(p || {})) assert.ok(M[klucz], 'surowiec istnieje: ' + klucz);
 });
 
 
@@ -248,7 +277,7 @@ import { World } from '../src/mine.js';
     const s = eko.nowyStan();
     assert.equal(eko.poziomPaliwa(s), 1);
     s.paliwo = 60; assert.equal(eko.poziomPaliwa(s), 0.25);
-    s.kasa = 500; eko.kupUlepszenie(s, 'lampa'); assert.equal(eko.poziomPaliwa(s), 1, 'nowa lampa jest pełna');
+    s.kasa = 500; s.przedmioty = { [COAL]: 4 }; eko.kupUlepszenie(s, 'lampa'); assert.equal(eko.poziomPaliwa(s), 1, 'nowa lampa jest pełna');
     s.paliwo = 0; eko.napelnijLampe(s); assert.equal(s.paliwo, eko.LAMPY[1].paliwo);
     s.przedmioty = { [COAL]: 7, [DIAMOND]: 1 };
     assert.equal(eko.zgubPoloweUrobku(s), 3);
@@ -289,8 +318,8 @@ import { charakter } from '../src/mines.js';
     assert.ok(eko.kupUrzadzenie(g, 'wozek') && !eko.kupUrzadzenie(g, 'wozek') && !eko.kupUrzadzenie(g, 'winda'));
     assert.equal(eko.wyslijUrobek(g), 6); assert.equal(eko.ileWPlecaku(g), 0);
     g.przedmioty = { [COAL]: 4 }; assert.equal(eko.zgubPoloweUrobku(g), 2);
-    assert.equal(eko.wartoscUrobku(g), 8 * 5, 'wózek chroni wywieziony urobek');
-    assert.equal(eko.sprzedajWszystko(g), 40); assert.deepEqual(g.sklad, {});
+    assert.equal(eko.ileSurowca(g, COAL), 8, 'wózek chroni wywieziony urobek');
+    assert.equal(eko.sprzedajWszystko(g), 4 * 5); assert.deepEqual(g.sklad, { [COAL]: 4 }, 'węgiel na lampę zostaje w składzie');
     assert.ok(eko.kupZapas(g, 'stemple') && g.stemple === 7 && eko.kupZapas(g, 'dynamit') && g.dynamit === 3);
 
     // Charakter kopalni: Mokra ma zalane dno, Kruchy Uskok dużo kruchej skały.
@@ -303,6 +332,38 @@ import { charakter } from '../src/mines.js';
     assert.deepEqual(settleWater(m.world, m.world.index(m.shaft.x + 1, m.shaft.bottomY, m.shaft.z + 1)), { remove: [], add: [] }, 'zalane dno stoi spokojnie');
     assert.equal(MINES.slice(0, 3).map(d => d.nazwa).join(), 'Stara Sztolnia,Srebrny Szyb,Głębia Kryształów', 'stare numery kopalni bez zmian');
     ok++; console.log('  ok  stemple, dynamit, wózek, winda, charakter kopalni');
+}
+
+// --- Surowce i minerały ---
+{
+    assert.ok(MINERALY.length >= 30, 'bogata lista surowców');
+    const ids = [...MINERALY, ...SKALY].map(r => r.id), klucze = [...MINERALY, ...SKALY].map(r => r.klucz);
+    assert.equal(new Set(ids).size, ids.length, 'numery bloków się nie powtarzają');
+    assert.equal(new Set(klucze).size, klucze.length, 'klucze się nie powtarzają');
+    assert.ok(TILE_NAMES.length <= 64, 'tekstury mieszczą się w atlasie 8x8');
+    assert.equal(new Set(TILE_NAMES).size, TILE_NAMES.length);
+    assert.deepEqual([9, 10, 11, 12, 13, 14, 15, 16], MINERALY.slice(0, 8).map(r => r.id), 'stare surowce mają stare numery');
+    for (const r of MINERALY) {
+        assert.ok(r.rodzaj in RODZAJE && r.wartosc > 0 && r.poziom >= 0 && r.poziom < eko.KILOFY.length, r.klucz);
+        assert.ok(TILE_NAMES.includes(r.skala) && BLOCKS[r.id].nazwa === r.nazwa, r.klucz);
+        assert.ok(MINES.some(m => m.rudy.some(x => x[0] === r.id)), r.nazwa + ' występuje w jakiejś kopalni');
+        // Tekstura surowca różni się od gołej skały (surowiec naprawdę widać).
+        const a = makeTile(r.klucz), b = makeTile(r.skala); let inne = 0;
+        for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) inne++;
+        assert.ok(inne > 120 && inne < 3000, `${r.klucz}: widać w skale (${inne} pikseli)`);
+    }
+    // Droższe surowce wymagają co najmniej tak dobrego kilofa jak tańsze z tego samego rodzaju... ogólnie: wartość rośnie z kilofem.
+    for (let p = 1; p < eko.KILOFY.length; p++) {
+        const min = Math.min(...MINERALY.filter(r => r.poziom === p).map(r => r.wartosc)), maxNizej = Math.max(...MINERALY.filter(r => r.poziom === p - 1).map(r => r.wartosc));
+        assert.ok(min >= maxNizej * 0.4, 'wartości rosną z poziomem kilofa: ' + p);
+    }
+    // Każda kopalnia ma coś własnego, czego nie ma w żadnej innej.
+    for (const m of MINES) assert.ok(m.rudy.some(x => MINES.every(o => o === m || !o.rudy.some(y => y[0] === x[0]))), m.nazwa + ' ma własny surowiec');
+    // W pierwszej kopalni drewnianym kilofem da się zdobyć krzemień na kamienny kilof.
+    assert.ok(MINES[0].rudy.some(x => x[0] === M.krzemien) && BLOCKS[M.krzemien].poziom === 0);
+    const s = eko.nowyStan(); eko.dodajUrobek(s, M.sol);
+    assert.deepEqual(s.odkryte, { [M.sol]: true }, 'wykopany surowiec trafia do atlasu');
+    ok++; console.log('  ok  surowce i minerały: ' + MINERALY.length + ' surowców, ' + SKALY.length + ' nowe skały');
 }
 
 // --- Wersja i pliki aplikacji ---

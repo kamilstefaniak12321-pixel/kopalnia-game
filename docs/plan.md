@@ -21,6 +21,9 @@
    *(zrobione w 0.5.0, razem ze stemplami)*
 4. **Surowce i minerały** — duże rozszerzenie listy (patrz „Kierunek”),
    razem z tym, do czego służą.
+   *(pierwsza duża porcja w 0.6.0: 31 surowców, 4 nowe skały,
+   wytwarzanie sprzętu, atlas; listę można dalej rozszerzać w
+   `src/minerals.js`)*
 
 ## Do zrobienia przy okazji
 

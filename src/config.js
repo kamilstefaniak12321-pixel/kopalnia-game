@@ -31,4 +31,4 @@ export const LADDER_SPEED = 3.4;
 export const REACH = 4.5;
 
 export const SAVE_KEY = 'kopalnia-game-zapis-1';
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';

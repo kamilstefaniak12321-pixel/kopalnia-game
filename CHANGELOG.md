@@ -1,5 +1,24 @@
 # Zmiany
 
+## 0.6.0
+
+- 31 surowców zamiast 8: metale (cyna, ołów, cynk, nikiel, kobalt,
+  wolfram, tytan, platyna, iryd...), kamienie szlachetne (bursztyn,
+  ametyst, jadeit, topaz, opal, szafir, aleksandryt...) i minerały (sól,
+  krzemień, siarka, kwarc, saletra, malachit, lazuryt).
+- Surowce wyglądają różnie w skale: bryłki, graniaste kryształy, żyły,
+  ziarna, faliste warstwy, mieniący się opal.
+- Cztery nowe skały: wapień, piaskowiec, granit, marmur. Każda kopalnia
+  ma własne warstwy skał i własny zestaw surowców.
+- Wytwarzanie: kilofy i lampy wymagają oprócz monet konkretnych surowców
+  (np. miedziany kilof: miedź i cyna). Dynamit można zrobić z saletry,
+  siarki i węgla.
+- Skład na powierzchni: skup sam odkłada surowce potrzebne na następny
+  kilof i lampę; resztę sprzedaje.
+- Atlas surowców w sklepie: co już odkryte, ile warte, jakim kilofem
+  i w której kopalni.
+- Wszystkie surowce są w jednej tabeli: `src/minerals.js`.
+
 ## 0.5.0
 
 - Stemple: postawione pod kruchym stropem podpierają go (można je

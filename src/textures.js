@@ -6,13 +6,14 @@
 // ------------------------------------------------------------
 import { TILE } from './config.js';
 import { mulberry32, hash2 } from './rng.js';
+import { MINERALY, SKALY } from './minerals.js';
 
 const S = TILE;
 
 // Kolejność w atlasie.
 export const TILE_NAMES = ['trawa_gora', 'trawa_bok', 'ziemia', 'kamien', 'lupek', 'bazalt',
-    'lita_skala', 'deski', 'drabina', 'wegiel', 'miedz', 'zelazo', 'srebro', 'zloto',
-    'szmaragd', 'rubin', 'diament', 'pochodnia', 'krucha', 'rumosz', 'stempel', 'dynamit'];
+    'lita_skala', 'deski', 'drabina', 'pochodnia', 'krucha', 'rumosz', 'stempel', 'dynamit',
+    ...SKALY.map(r => r.klucz), ...MINERALY.map(r => r.klucz)];
 export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
 // Gładki szum, który powtarza się co 64 piksele.
@@ -39,7 +40,7 @@ function mul(buf, x, y, k) {
 }
 
 // Skała: kilka odcieni jednego koloru + ciemne spękania + drobinki.
-function skala(base, seed, { odcienie = 5, kontrast = 0.5, pekniecia = 0.011, drobinki = 0.03 } = {}) {
+function skala(base, seed, { odcienie = 5, kontrast = 0.5, pekniecia = 0.011, drobinki = 0.03, pasy = false } = {}) {
     const buf = new Uint8ClampedArray(S * S * 4);
     for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
         const q = Math.min(odcienie - 1, Math.floor(fbm(x, y, seed) * 1.5 * odcienie - odcienie * 0.25));
@@ -47,6 +48,7 @@ function skala(base, seed, { odcienie = 5, kontrast = 0.5, pekniecia = 0.011, dr
         if (Math.abs(vnoise(x, y, 5, seed + 7) - 0.5) < pekniecia) k *= 0.62;
         const h = hash2(x, y, seed + 9);
         if (h < drobinki) k *= 0.8; else if (h > 1 - drobinki) k *= 1.14;
+        if (pasy) k *= 0.93 + 0.12 * Math.sin((y + vnoise(x, y, 4, seed + 5) * 9) / S * Math.PI * 10);   // warstwy osadu
         put(buf, x, y, base[0] * k, base[1] * k, base[2] * k);
     }
     return buf;
@@ -75,6 +77,76 @@ function ruda(buf, kolor, seed, { ile = 7, klejnot = false } = {}) {
         }
     }
     return buf;
+}
+
+// Inne sposoby, w jakie surowiec siedzi w skale. Każdy rysuje na
+// gotowej teksturze skały i sam dba o kafelkowanie.
+const kolorK = (buf, x, y, c, k) => put(buf, x, y, c[0] * k, c[1] * k, c[2] * k);
+const zawin = d => { d = ((d % S) + S) % S; return d > S / 2 ? d - S : d; };
+
+function krysztaly(buf, kolor, seed, blysk) {
+    // Graniaste kryształy: romby z jasną i ciemną ścianką.
+    const rnd = mulberry32(seed), lista = [];
+    for (let i = 0; i < 8; i++) lista.push([rnd() * S, rnd() * S, 3 + rnd() * 4, 0.6 + rnd() * 0.8]);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) for (const [bx, by, r, w] of lista) {
+        const dx = zawin(x - bx), dy = zawin(y - by), d = Math.abs(dx) / w + Math.abs(dy);
+        if (d > r + 1) continue;
+        if (d > r) { mul(buf, x, y, 0.5); break; }
+        let k = dx < 0 ? (dy < 0 ? 1.3 : 1.05) : (dy < 0 ? 0.9 : 0.62);
+        if (blysk && Math.abs(dx + 1) < 1 && Math.abs(dy + r * 0.4) < 1.2) k = 1.8;
+        kolorK(buf, x, y, kolor, k); break;
+    }
+    return buf;
+}
+function zyly(buf, kolor, seed) {
+    // Żyły: wijące się pasma przez całą skałę.
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const d = Math.abs(vnoise(x, y, 3, seed) * 0.7 + vnoise(x, y, 8, seed + 1) * 0.3 - 0.5);
+        if (d < 0.022) kolorK(buf, x, y, kolor, d < 0.008 ? 1.2 : 0.95 - hash2(x, y, seed) * 0.2);
+        else if (d < 0.03) mul(buf, x, y, 0.6);
+    }
+    return buf;
+}
+function ziarna(buf, kolor, seed, blysk) {
+    // Drobne ziarna rozsiane skupiskami.
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const gesto = vnoise(x, y, 4, seed), h = hash2(x >> 1, y >> 1, seed + 3);
+        if (gesto > 0.52 && h < (gesto - 0.52) * 2.2) kolorK(buf, x, y, kolor, blysk && hash2(x, y, seed + 4) > 0.9 ? 1.5 : 0.8 + hash2(x, y, seed + 5) * 0.4);
+    }
+    return buf;
+}
+function warstwy(buf, kolor, seed) {
+    // Faliste pasy na przemian jaśniejsze i ciemniejsze (malachit, jadeit).
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const n = vnoise(x, y, 3, seed);
+        if (n < 0.62) continue;
+        const pas = Math.sin((y + vnoise(x, y, 4, seed + 2) * 22) / S * Math.PI * 12);
+        if (n < 0.645) mul(buf, x, y, 0.5); else kolorK(buf, x, y, kolor, pas > 0.3 ? 1.2 : pas < -0.3 ? 0.62 : 0.9);
+    }
+    return buf;
+}
+function teczowy(buf, kolor, seed) {
+    // Opal: mleczne bryłki mieniące się kolorami.
+    const przed = buf.slice();
+    ruda(buf, kolor, seed, { ile: 7 });
+    const barwy = [[255, 120, 160], [120, 220, 255], [150, 255, 170], [255, 230, 120]];
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const i = (y * S + x) * 4;
+        if (buf[i] === przed[i] || buf[i] < kolor[0] * 0.9) continue;            // tylko jasne wnętrze bryłek
+        if (hash2(x >> 1, y >> 1, seed + 8) > 0.6) { const c = barwy[Math.floor(hash2(x >> 1, y >> 1, seed + 9) * 4)]; put(buf, x, y, c[0], c[1], c[2]); }
+    }
+    return buf;
+}
+function surowiec(r) {
+    const buf = makeTile(r.skala), seed = 92 + r.id;
+    switch (r.styl) {
+        case 'krysztaly': return krysztaly(buf, r.kolor, seed, r.blysk);
+        case 'zyly': return zyly(buf, r.kolor, seed);
+        case 'ziarna': return ziarna(buf, r.kolor, seed, r.blysk);
+        case 'warstwy': return warstwy(buf, r.kolor, seed);
+        case 'teczowy': return teczowy(buf, r.kolor, seed);
+        default: return ruda(buf, r.kolor, seed, { ile: r.klucz === 'wegiel' ? 9 : r.blysk ? 6 : 7, klejnot: r.blysk });
+    }
 }
 
 function trawaGora() {
@@ -200,15 +272,11 @@ export function makeTile(name) {
         case 'rumosz': return rumosz();
         case 'stempel': return stempel();
         case 'dynamit': return dynamit();
-        case 'wegiel': return ruda(kamien(), [30, 30, 36], 101, { ile: 9 });
-        case 'miedz': return ruda(kamien(), [214, 120, 62], 102);
-        case 'zelazo': return ruda(kamien(), [206, 168, 138], 103);
-        case 'srebro': return ruda(lupek(), [226, 232, 242], 104);
-        case 'zloto': return ruda(lupek(), [250, 206, 60], 105);
-        case 'szmaragd': return ruda(bazalt(), [40, 214, 112], 106, { ile: 6, klejnot: true });
-        case 'rubin': return ruda(bazalt(), [228, 44, 74], 107, { ile: 6, klejnot: true });
-        case 'diament': return ruda(bazalt(), [112, 236, 246], 108, { ile: 6, klejnot: true });
     }
+    const sk = SKALY.find(r => r.klucz === name);
+    if (sk) return skala(sk.kolor, 40 + sk.id, sk.wyglad);
+    const su = MINERALY.find(r => r.klucz === name);
+    if (su) return surowiec(su);
     throw new Error('Nieznana tekstura: ' + name);
 }
 

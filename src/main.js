@@ -5,6 +5,7 @@ import * as THREE from '../lib/three/three.module.js';
 import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT } from './config.js';
 import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
 import { MINES, charakter } from './mines.js';
+import { MINERALY, RODZAJE } from './minerals.js';
 import { generateMine, applyChanges } from './mine.js';
 import { computeLight } from './light.js';
 import { shaken, pulled, landingY, isHanging } from './cavein.js';
@@ -260,13 +261,28 @@ function odswiezHud() {
 
 // ---------- Sklep ----------
 let sklepOtwarty = false;
+let atlasOtwarty = false;
+// Lista surowców z ikonami: [id, liczba] -> kafelki.
+const kafelki = lista => lista.map(([id, n]) => `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('');
+// Składniki przepisu: zielone, gdy są, czerwone, gdy brakuje.
+const przepisHtml = surowce => eko.skladniki(stan, surowce).map(([id, trzeba, mam]) =>
+    `<span class="${mam >= trzeba ? 'jest' : 'brak'}"><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa} ${Math.min(mam, trzeba)}/${trzeba}</span>`).join(' ');
+function atlasHtml() {
+    const gdzie = id => MINES.filter(m => m.rudy.some(r => r[0] === id)).map(m => m.nazwa).join(', ');
+    return Object.entries(RODZAJE).map(([rodzaj, tytul]) => `<h3>${tytul}</h3><div class="atlas">${MINERALY.filter(m => m.rodzaj === rodzaj).map(m =>
+        stan.odkryte?.[m.id]
+            ? `<div><img src="${ikony[m.klucz]}"><b>${m.nazwa}</b><small>${m.wartosc} monet · ${eko.KILOFY[m.poziom].nazwa.toLowerCase()}<br>${gdzie(m.id)}</small></div>`
+            : `<div class="nieznany"><span>?</span><b>???</b><small>${gdzie(m.id)}</small></div>`).join('')}</div>`).join('');
+}
 function rysujSklep() {
-    const wart = eko.wartoscUrobku(stan);
+    const wart = eko.wartoscUrobku(stan), sklad = Object.entries(stan.sklad || {});
     const ulepszenie = (rodzaj, tytul, opis) => {
         const lista = { kilof: eko.KILOFY, plecak: eko.PLECAKI, lampa: eko.LAMPY }[rodzaj];
         const teraz = lista[stan[rodzaj]], n = eko.nastepne(stan, rodzaj);
-        return `<div class="wiersz"><div>${tytul}: <b>${teraz.nazwa}</b><small>${n ? 'Następny: ' + n.nazwa + ' — ' + opis(n) : 'Najlepszy możliwy'}</small></div>
-            ${n ? `<button data-kup="${rodzaj}" ${stan.kasa < n.cena ? 'disabled' : ''}>Kup za ${n.cena}</button>` : ''}</div>`;
+        const stac = n && stan.kasa >= n.cena && eko.starczaSurowcow(stan, n.surowce);
+        return `<div class="wiersz"><div>${tytul}: <b>${teraz.nazwa}</b><small>${n ? 'Następny: ' + n.nazwa + ' — ' + opis(n) : 'Najlepszy możliwy'}</small>
+            ${n?.surowce ? `<div class="przepis">Potrzeba: ${przepisHtml(n.surowce)}</div>` : ''}</div>
+            ${n ? `<button data-kup="${rodzaj}" ${stac ? '' : 'disabled'}>${n.surowce ? 'Zrób' : 'Kup'} za ${n.cena}</button>` : ''}</div>`;
     };
     const kopalnie = MINES.map((m, i) => [m, i]).sort((a, b) => a[0].cena - b[0].cena).map(([m, i]) => {
         const mam = stan.kopalnie.includes(i);
@@ -277,18 +293,24 @@ function rysujSklep() {
     }).join('');
     $('sklep').innerHTML = `<h1>Skup i sklep</h1><div class="stan-kasy">${stan.kasa} monet</div>
         <h2>Urobek</h2>
-        <div class="lista-urobku">${Object.entries(stan.przedmioty).map(([id, n]) =>
-            `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('') || 'Plecak jest pusty.'}</div>
-        ${Object.keys(stan.sklad || {}).length ? `<p>Wózek wywiózł na górę:</p><div class="lista-urobku">${Object.entries(stan.sklad).map(([id, n]) =>
-            `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('')}</div>` : ''}
-        <div class="wiersz"><div></div><button data-sprzedaj ${wart ? '' : 'disabled'}>Sprzedaj wszystko (+${wart})</button></div>
+        <div class="lista-urobku">${kafelki(Object.entries(stan.przedmioty)) || 'Plecak jest pusty.'}</div>
+        ${sklad.length ? `<p class="maly">W składzie na powierzchni (wózek i surowce odłożone na ulepszenia):</p><div class="lista-urobku">${kafelki(sklad)}</div>` : ''}
+        <div class="wiersz"><div><small>Skup nie bierze surowców potrzebnych na następny kilof i lampę — odkłada je do składu.</small></div>
+            <button data-sprzedaj ${wart ? '' : 'disabled'}>Sprzedaj wszystko (+${wart})</button></div>
+        ${sklad.length ? `<div class="wiersz"><div></div><button data-sklad>Sprzedaj też skład (+${eko.wartoscSkladu(stan)})</button></div>` : ''}
         <h2>Wyposażenie</h2>
         ${ulepszenie('kilof', 'Kilof', n => 'kopie ' + n.szybkosc + '× szybciej, rusza twardsze skały')}
         ${ulepszenie('plecak', 'Plecak', n => 'mieści ' + n.pojemnosc + ' sztuk')}
         ${ulepszenie('lampa', 'Lampa', n => 'świeci na ' + n.zasieg + ' bloków, paliwa na ' + Math.round(n.paliwo / 60) + ' min')}
         <h2>Zapasy</h2>
-        ${Object.entries(eko.ZAPASY).map(([k, z]) => `<div class="wiersz"><div>${z.nazwa}: <b>${stan[k]}</b><small>${z.opis}</small></div>
-            <button data-zapas="${k}" ${stan.kasa < z.cena ? 'disabled' : ''}>+${z.ile} za ${z.cena}</button></div>`).join('')}
+        ${Object.entries(eko.ZAPASY).map(([k, z]) => `<div class="wiersz"><div>${z.nazwa}: <b>${stan[k]}</b><small>${z.opis}</small>
+            ${z.przepis ? `<div class="przepis">Albo z surowców: ${przepisHtml(z.przepis)}</div>` : ''}</div>
+            <div class="przyciski">${z.przepis ? `<button data-wytworz="${k}" ${eko.starczaSurowcow(stan, z.przepis) ? '' : 'disabled'}>Zrób +${z.ile}</button>` : ''}
+            <button data-zapas="${k}" ${stan.kasa < z.cena ? 'disabled' : ''}>+${z.ile} za ${z.cena}</button></div></div>`).join('')}
+        <h2>Atlas surowców</h2>
+        <div class="wiersz"><div>Odkryte: <b>${MINERALY.filter(m => stan.odkryte?.[m.id]).length}/${MINERALY.length}</b><small>Każda kopalnia ma własne skały i surowce.</small></div>
+            <button data-atlas>${atlasOtwarty ? 'Zwiń' : 'Pokaż'}</button></div>
+        ${atlasOtwarty ? atlasHtml() : ''}
         <h2>Urządzenia szybu</h2>
         ${Object.entries(eko.URZADZENIA).map(([k, u]) => `<div class="wiersz"><div><b>${u.nazwa}</b><small>${u.opis}</small></div>
             ${stan[k] ? '<button disabled>Kupione</button>' : `<button data-urzadzenie="${k}" ${stan.kasa < u.cena ? 'disabled' : ''}>Kup za ${u.cena}</button>`}</div>`).join('')}
@@ -337,6 +359,9 @@ $('sklep').addEventListener('click', e => {
     const d = e.target.dataset;
     if (!e.target.matches('button')) return;
     if ('sprzedaj' in d) { const z = eko.sprzedajWszystko(stan); stuk(2.2); komunikat('Sprzedano za ' + z + ' monet'); }
+    else if ('sklad' in d) { const z = eko.sprzedajSklad(stan); stuk(2.2); komunikat('Sprzedano skład za ' + z + ' monet'); }
+    else if ('atlas' in d) atlasOtwarty = !atlasOtwarty;
+    else if (d.wytworz) { if (eko.wytworzZapas(stan, d.wytworz)) stuk(1.6); }
     else if (d.kup) { if (eko.kupUlepszenie(stan, d.kup)) stuk(1.6); }
     else if (d.zapas) { if (eko.kupZapas(stan, d.zapas)) stuk(1.6); }
     else if (d.urzadzenie) { if (eko.kupUrzadzenie(stan, d.urzadzenie)) stuk(1.6); }
@@ -346,7 +371,9 @@ $('sklep').addEventListener('click', e => {
     else if (d.idz) zmienKopalnie(+d.idz, true);
     else if ('nowa' in d) zmienKopalnie(stan.kopalnia, true);
     else if ('zamknij' in d) return zamknijSklep();
+    const przewiniecie = $('sklep').scrollTop;
     zapisz(); odswiezHud(); rysujSklep();
+    $('sklep').scrollTop = przewiniecie;
 });
 
 // ---------- Sterowanie ----------
@@ -478,13 +505,14 @@ function wykonajKomende(tekst) {
     else if (nazwa === 'pochodnie' && n >= 0) stan.pochodnie = n;
     else if (nazwa === 'stemple' && n >= 0) stan.stemple = n;
     else if (nazwa === 'dynamit' && n >= 0) stan.dynamit = n;
+    else if (nazwa === 'surowce') { stan.sklad ||= {}; for (const m of MINERALY) { stan.sklad[m.id] = (stan.sklad[m.id] || 0) + (n > 0 ? n : 20); (stan.odkryte ||= {})[m.id] = true; } }
     else if (nazwa === 'winda') stan.winda = true;
     else if (nazwa === 'wozek') stan.wozek = true;
     else if (nazwa === 'gora') naPowierzchnie();
     else if (nazwa === 'dol') { player.pos.x = kopalnia.shaft.x + 1.5; player.pos.z = kopalnia.shaft.z + 1.5; player.pos.y = kopalnia.shaft.bottomY; }
     else if (nazwa === 'kopalnia' && MINES[n]) { if (!stan.kopalnie.includes(n)) stan.kopalnie.push(n); zmienKopalnie(n, true); }
     else if (nazwa === 'reset') { stan = { ...eko.nowyStan(), ziarno: Math.floor(Math.random() * 1e9) }; wczytajKopalnie(); }
-    else return komunikat('Komendy: kasa N, kilof 0-5, plecak 0-3, lampa 0-3, paliwo 0-100, drabiny N, pochodnie N, stemple N, dynamit N, winda, wozek, kopalnia 0-4, gora, dol, reset');
+    else return komunikat('Komendy: kasa N, kilof 0-5, plecak 0-3, lampa 0-3, paliwo 0-100, drabiny N, pochodnie N, stemple N, dynamit N, surowce N, winda, wozek, kopalnia 0-4, gora, dol, reset');
     komunikat('OK: ' + tekst); zapisz(); odswiezHud();
 }
 

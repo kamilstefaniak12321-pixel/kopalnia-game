@@ -77,3 +77,17 @@ body.dotyk #hud { left: calc(12px + env(safe-area-inset-left)); }
 #podwoda { background: #0b4a8a55; transition: opacity .2s; }
 #zaciemnienie { background: #000; }
 #blysk { background: #fff3c4; }
+
+/* ---------- Surowce: przepisy i atlas ---------- */
+.przepis { font-size: 12px; margin-top: 3px; color: var(--szare); }
+.przepis span { white-space: nowrap; margin-right: 6px; }
+.przepis img { display: inline-block !important; width: 16px !important; height: 16px !important; margin: 0 3px -3px 0 !important; }
+.przepis .jest { color: #8fd27a; } .przepis .brak { color: #ee7b5e; }
+.przyciski { display: flex; flex-direction: column; gap: 4px; }
+.maly { font-size: 12px; color: var(--szare); margin: 8px 0 4px; text-align: left !important; }
+.okno h3 { font-size: 13px; margin: 10px 0 4px; color: var(--szare); }
+.atlas { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.atlas div { background: #0006; border: 2px solid var(--ramka); padding: 5px; text-align: center; font-size: 12px; }
+.atlas small { display: block; color: var(--szare); font-size: 10px; line-height: 1.25; }
+.atlas .nieznany { opacity: .6; } .atlas .nieznany span { display: block; height: 34px; font-size: 26px; color: var(--szare); }
+#urobek { flex-wrap: wrap; justify-content: center; max-width: 56vw; }
