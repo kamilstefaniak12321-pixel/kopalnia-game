@@ -3,10 +3,12 @@
 // ------------------------------------------------------------
 import * as THREE from '../lib/three/three.module.js';
 import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT } from './config.js';
-import { AIR, TORCH, BLOCKS, WALLS, PLACED_LADDERS } from './blocks.js';
+import { AIR, TORCH, UNSTABLE, RUBBLE, WATER, BLOCKS, WALLS, PLACED_LADDERS, isOpen } from './blocks.js';
 import { MINES } from './mines.js';
 import { generateMine, applyChanges } from './mine.js';
 import { computeLight } from './light.js';
+import { shaken, pulled, landingY, isHanging } from './cavein.js';
+import { findWater, settleWater } from './water.js';
 import { meshChunk } from './mesher.js';
 import { TILE_NAMES, TILE_INDEX, makeTile, makeCrack } from './textures.js';
 import { Player, raycast } from './player.js';
@@ -53,7 +55,8 @@ camera.rotation.order = 'YXZ';
 const ambient = new THREE.AmbientLight(0xffffff, 1);
 const sun = new THREE.DirectionalLight(0xfff2d8, 1);
 sun.position.set(0.5, 1, 0.3);
-const lampa = new THREE.PointLight(0xffecd2, 1, 10, 1.6);
+// decay 1: łagodniejszy spadek, żeby ściana tuż przed twarzą nie była biała
+const lampa = new THREE.PointLight(0xffecd2, 1, 10, 1);
 scene.add(ambient, sun, lampa);
 
 // ---------- Tekstury: atlas 512x512 z kafelków 64x64 ----------
@@ -79,25 +82,40 @@ function pixelTexture(canvas) {
 const material = new THREE.MeshLambertMaterial({ map: pixelTexture(atlasCanvas), vertexColors: true, alphaTest: 0.5 });
 // Światło pochodni jest zapisane w wierzchołkach ("swiatlo") i dodawane
 // do koloru bloku jako ciepła poświata - działa też w zupełnej ciemności.
-material.onBeforeCompile = shader => {
+function poswiataPochodni(shader) {
     shader.vertexShader = shader.vertexShader
         .replace('void main() {', 'attribute float swiatlo;\nvarying float vSwiatlo;\nvoid main() {\n\tvSwiatlo = swiatlo;');
     shader.fragmentShader = shader.fragmentShader
         .replace('void main() {', 'varying float vSwiatlo;\nvoid main() {')
         .replace('#include <opaque_fragment>', 'outgoingLight += diffuseColor.rgb * vSwiatlo * vec3(1.0, 0.74, 0.46) * 0.6;\n#include <opaque_fragment>');
-};
+}
+material.onBeforeCompile = poswiataPochodni;
+const materialWody = new THREE.MeshLambertMaterial({ color: 0x3f8fd0, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false });
+materialWody.onBeforeCompile = poswiataPochodni;
 const ikonaBloku = id => ikony[BLOCKS[id].tekstury[1]];
 
 // ---------- Świat i jego kawałki ----------
 let kopalnia, world, player;
-const chunks = new Map();
+const chunks = new Map(), chunksWody = new Map();
 
 function rebuildChunk(cx, cy, cz) {
     const key = cx + ',' + cy + ',' + cz;
-    const old = chunks.get(key);
-    if (old) { scene.remove(old); old.geometry.dispose(); chunks.delete(key); }
+    for (const mapa of [chunks, chunksWody]) {
+        const old = mapa.get(key);
+        if (old) { scene.remove(old); old.geometry.dispose(); mapa.delete(key); }
+    }
     if (cx < 0 || cy < 0 || cz < 0 || cx * CHUNK >= world.w || cy * CHUNK >= world.h || cz * CHUNK >= world.d) return;
     const g = meshChunk(world, cx, cy, cz, TILE_INDEX);
+    if (g.woda.idx.length) {
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(g.woda.pos, 3));
+        geo.setAttribute('normal', new THREE.Float32BufferAttribute(g.woda.nor, 3));
+        geo.setAttribute('swiatlo', new THREE.Float32BufferAttribute(g.woda.lit, 1));
+        geo.setIndex(g.woda.idx);
+        const mesh = new THREE.Mesh(geo, materialWody);
+        mesh.renderOrder = 1;
+        scene.add(mesh); chunksWody.set(key, mesh);
+    }
     if (!g.idx.length) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(g.pos, 3));
@@ -113,12 +131,18 @@ function rebuildChunk(cx, cy, cz) {
 // Zmiana bloku przez gracza: zapamiętaj ją, przelicz światło pochodni
 // (gdy jakieś są) i odśwież kawałki świata, w których coś się zmieniło.
 let pochodnie = 0;
-function zmienBlok(x, y, z, id) {
-    const bylo = world.get(x, y, z);
-    world.set(x, y, z, id);
-    zmiany[world.index(x, y, z)] = id; zmianyDoZapisu = true;
-    let x1 = x, y1 = y, z1 = z, x2 = x, y2 = y, z2 = z;
-    if (pochodnie > 0 || id === TORCH || bylo === TORCH) {
+function zmienBlok(x, y, z, id) { zmienBloki([[x, y, z, id]]); }
+function zmienBloki(lista) {
+    if (!lista.length) return;
+    let x1 = 1e9, y1 = 1e9, z1 = 1e9, x2 = -1, y2 = -1, z2 = -1, swiatlo = pochodnie > 0;
+    for (const [x, y, z, id] of lista) {
+        if (id === TORCH || world.get(x, y, z) === TORCH) swiatlo = true;
+        world.set(x, y, z, id);
+        zmiany[world.index(x, y, z)] = id;
+        if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y; if (z < z1) z1 = z; if (z > z2) z2 = z;
+    }
+    zmianyDoZapisu = true;
+    if (swiatlo) {
         const stare = world.light.slice(), nowe = world.light;
         pochodnie = computeLight(world);
         for (let i = 0; i < nowe.length; i++) {
@@ -139,8 +163,10 @@ function naPowierzchnie() {
 }
 
 function wczytajKopalnie() {
-    for (const m of chunks.values()) { scene.remove(m); m.geometry.dispose(); }
-    chunks.clear();
+    for (const mapa of [chunks, chunksWody]) { for (const m of mapa.values()) { scene.remove(m); m.geometry.dispose(); } mapa.clear(); }
+    spadki.length = 0; przeplyw = null; oddech = 1;
+    for (const l of lecace) scene.remove(l.mesh);
+    lecace.length = 0;
     kopalnia = generateMine(MINES[stan.kopalnia], stan.ziarno);
     world = kopalnia.world;
     // Wczytaj wcześniejsze zmiany, jeśli to wciąż ta sama kopalnia.
@@ -188,10 +214,10 @@ handScene.add(kilofGrupa);
 
 // ---------- Dźwięk: krótkie stuknięcia robione kodem ----------
 let audio;
-function stuk(wysokosc = 1, glosnosc = 0.25) {
+function stuk(wysokosc = 1, glosnosc = 0.25, dlugosc = 0.07) {
     try {
         audio ||= new AudioContext();
-        const n = Math.floor(audio.sampleRate * 0.07), buf = audio.createBuffer(1, n, audio.sampleRate), d = buf.getChannelData(0);
+        const n = Math.floor(audio.sampleRate * dlugosc), buf = audio.createBuffer(1, n, audio.sampleRate), d = buf.getChannelData(0);
         for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
         const src = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
         src.buffer = buf; f.type = 'bandpass'; f.frequency.value = 900 * wysokosc; g.gain.value = glosnosc;
@@ -202,14 +228,17 @@ function stuk(wysokosc = 1, glosnosc = 0.25) {
 // ---------- HUD i komunikaty ----------
 let wybrany = 0;   // 0 - kilof, 1 - drabina, 2 - pochodnia
 function wybierz(i) { wybrany = (i + 3) % 3; myszWcisnieta = false; odswiezHud(); }
-let komunikatDo = 0;
-function komunikat(tekst) {
+let komunikatDo = 0, waznyDo = 0;
+function komunikat(tekst, czas = 1800) {
+    if (performance.now() < waznyDo && czas <= 1800) return;      // nie zasłaniaj ważnej wiadomości
     $('komunikat').textContent = tekst; $('komunikat').style.opacity = 1;
-    komunikatDo = performance.now() + 1800;
+    komunikatDo = performance.now() + czas;
+    if (czas > 1800) waznyDo = komunikatDo;
 }
 function odswiezHud() {
     $('kasa').textContent = stan.kasa + ' monet';
     $('plecak').textContent = `Plecak: ${eko.ileWPlecaku(stan)}/${eko.pojemnosc(stan)}`;
+    $('lampa-nazwa').textContent = eko.LAMPY[stan.lampa].nazwa;
     $('kilof').textContent = eko.KILOFY[stan.kilof].nazwa;
     $('pasek').innerHTML = [['⛏', ''], [`<img src="${ikony.drabina}">`, stan.drabiny], [`<img src="${ikony.pochodnia}">`, stan.pochodnie]]
         .map(([ikona, ile], i) => `<div data-slot="${i}" class="${i === wybrany ? 'wybrany' : ''}">${ikona}<b>${ile}</b><i>${i + 1}</i></div>`).join('');
@@ -242,7 +271,7 @@ function rysujSklep() {
         <h2>Wyposażenie</h2>
         ${ulepszenie('kilof', 'Kilof', n => 'kopie ' + n.szybkosc + '× szybciej, rusza twardsze skały')}
         ${ulepszenie('plecak', 'Plecak', n => 'mieści ' + n.pojemnosc + ' sztuk')}
-        ${ulepszenie('lampa', 'Lampa', n => 'świeci na ' + n.zasieg + ' bloków')}
+        ${ulepszenie('lampa', 'Lampa', n => 'świeci na ' + n.zasieg + ' bloków, paliwa na ' + Math.round(n.paliwo / 60) + ' min')}
         <h2>Zapasy</h2>
         ${Object.entries(eko.ZAPASY).map(([k, z]) => `<div class="wiersz"><div>${z.nazwa}: <b>${stan[k]}</b><small>${z.opis}</small></div>
             <button data-zapas="${k}" ${stan.kasa < z.cena ? 'disabled' : ''}>+${z.ile} za ${z.cena}</button></div>`).join('')}
@@ -387,14 +416,112 @@ function wykonajKomende(tekst) {
     else if (nazwa === 'kilof' && ustaw('kilof', eko.KILOFY));
     else if (nazwa === 'plecak' && ustaw('plecak', eko.PLECAKI));
     else if (nazwa === 'lampa' && ustaw('lampa', eko.LAMPY));
+    else if (nazwa === 'paliwo' && n >= 0) { stan.paliwo = eko.LAMPY[stan.lampa].paliwo * Math.min(100, n) / 100; lampaOstrzezenie = 0; }
     else if (nazwa === 'drabiny' && n >= 0) stan.drabiny = n;
     else if (nazwa === 'pochodnie' && n >= 0) stan.pochodnie = n;
     else if (nazwa === 'gora') naPowierzchnie();
     else if (nazwa === 'dol') { player.pos.x = kopalnia.shaft.x + 1.5; player.pos.z = kopalnia.shaft.z + 1.5; player.pos.y = kopalnia.shaft.bottomY; }
     else if (nazwa === 'kopalnia' && MINES[n]) { if (!stan.kopalnie.includes(n)) stan.kopalnie.push(n); zmienKopalnie(n, true); }
     else if (nazwa === 'reset') { stan = { ...eko.nowyStan(), ziarno: Math.floor(Math.random() * 1e9) }; wczytajKopalnie(); }
-    else return komunikat('Komendy: kasa N, kilof 0-5, plecak 0-3, lampa 0-3, drabiny N, pochodnie N, kopalnia 0-2, gora, dol, reset');
+    else return komunikat('Komendy: kasa N, kilof 0-5, plecak 0-3, lampa 0-3, paliwo 0-100, drabiny N, pochodnie N, kopalnia 0-2, gora, dol, reset');
     komunikat('OK: ' + tekst); zapisz(); odswiezHud();
+}
+
+// ---------- Zagrożenia: zawały, woda, omdlenie ----------
+// W tej grze się nie ginie: po wypadku ratownicy wynoszą górnika na
+// powierzchnię, ale połowa urobku zostaje w kopalni.
+function omdlenie(powod) {
+    const strata = eko.zgubPoloweUrobku(stan);
+    naPowierzchnie(); eko.napelnijLampe(stan);
+    oddech = 1; myszWcisnieta = false; linaCzas = 0;
+    const z = $('zaciemnienie');
+    z.style.transition = 'none'; z.style.opacity = 1;
+    requestAnimationFrame(() => requestAnimationFrame(() => { z.style.transition = 'opacity 2.5s'; z.style.opacity = 0; }));
+    komunikat(`${powod} Ratownicy wynieśli cię na powierzchnię.${strata ? ` W kopalni zostało ${strata} szt. urobku.` : ''}`, 7000);
+    odswiezHud(); zapisz();
+}
+function graczW(x1, y1, z1, x2, y2, z2) {
+    const p = player.pos;
+    return p.x + 0.3 > x1 && p.x - 0.3 < x2 && p.y + 1.8 > y1 && p.y < y2 && p.z + 0.3 > z1 && p.z - 0.3 < z2;
+}
+
+// Zawały (zasady: src/cavein.js). spadki - bloki, które zaraz się
+// zerwą; lecace - bloki w locie.
+const spadki = [], lecace = [];
+let wstrzas = 0;
+const materialRumoszu = new THREE.MeshLambertMaterial({ map: pixelTexture(tileCanvas(makeTile('rumosz'))) });
+const pudelko = new THREE.BoxGeometry(1, 1, 1);
+function zaplanujSpadek(x, y, z, zaIle) {
+    if (!spadki.some(s => s.x === x && s.y === y && s.z === z)) spadki.push({ x, y, z, t: zaIle });
+}
+function poWstrzasie(x, y, z) {
+    const zerwane = shaken(world, x, y, z);
+    for (const [a, b, c] of zerwane) zaplanujSpadek(a, b, c, 0.8 + Math.random() * 0.4);
+    if (zerwane.length) { komunikat('Strop pęka — uciekaj!', 2500); stuk(0.12, 0.6, 0.9); wstrzas = 1; }
+}
+function zawaly(dt) {
+    for (let i = spadki.length - 1; i >= 0; i--) {
+        const s = spadki[i];
+        if ((s.t -= dt) > 0) continue;
+        spadki.splice(i, 1);
+        if (!isHanging(world, s.x, s.y, s.z)) continue;
+        const cel = landingY(world, s.x, s.y, s.z);
+        // Zanim blok zniknie z miejsca: kto wisiał obok albo nad nim, poleci za nim.
+        const pociagniete = pulled(world, s.x, s.y, s.z);
+        zmienBlok(s.x, s.y, s.z, AIR);
+        for (const [a, b, c] of pociagniete) zaplanujSpadek(a, b, c, 0.15 + Math.random() * 0.3);
+        const mesh = new THREE.Mesh(pudelko, materialRumoszu);
+        mesh.position.set(s.x + 0.5, s.y + 0.5, s.z + 0.5);
+        scene.add(mesh);
+        lecace.push({ mesh, x: s.x, z: s.z, y: s.y, vy: 0, cel });
+        wstrzas = Math.max(wstrzas, 0.6);
+    }
+    for (let i = lecace.length - 1; i >= 0; i--) {
+        const l = lecace[i];
+        l.vy += 26 * dt; l.y -= l.vy * dt;
+        const trafiony = graczW(l.x, l.y, l.z, l.x + 1, l.y + 1, l.z + 1);
+        if (l.y <= l.cel) {
+            scene.remove(l.mesh); lecace.splice(i, 1);
+            if (isOpen(world.get(l.x, l.cel, l.z))) zmienBlok(l.x, l.cel, l.z, RUBBLE);
+            stuk(0.25, 0.5, 0.25); wstrzas = Math.max(wstrzas, 0.5);
+        } else l.mesh.position.y = l.y + 0.5;
+        if (trafiony || graczW(l.x, l.cel, l.z, l.x + 1, l.cel + 1, l.z + 1) && l.y <= l.cel) return omdlenie('Przysypał cię zawał.');
+    }
+    wstrzas = Math.max(0, wstrzas - dt * 1.5);
+}
+
+// Woda (zasady: src/water.js). Po przebiciu się do zbiornika woda
+// przelewa się po kilka pól naraz, aż ułoży się na nowo.
+let przeplyw = null, przeplywCzas = 0, oddech = 1;
+function sprawdzWode(x, y, z) {
+    if (przeplyw) { przeplyw.ponow = [x, y, z]; return; }
+    const start = findWater(world, x, y, z);
+    const plan = start < 0 ? null : settleWater(world, start);
+    if (!plan || !plan.add.length) return;
+    przeplyw = plan; przeplyw.naRaz = Math.max(1, Math.ceil(plan.add.length / 45));
+    komunikat('Woda! Przebiłeś się do zbiornika.', 2500); stuk(0.5, 0.35, 1.2);
+}
+function woda(dt) {
+    if (przeplyw && (przeplywCzas += dt) > 0.07) {
+        przeplywCzas = 0;
+        const lista = [], wxyz = i => [i % world.w, Math.floor(i / (world.w * world.d)), Math.floor(i / world.w) % world.d];
+        for (let k = 0; k < przeplyw.naRaz && przeplyw.add.length; k++) {
+            const skad = przeplyw.remove.shift(), dokad = przeplyw.add.shift();
+            if (world.data[skad] !== WATER || world.data[dokad] !== AIR) continue;
+            lista.push([...wxyz(skad), AIR], [...wxyz(dokad), WATER]);
+        }
+        zmienBloki(lista);
+        if (!przeplyw.add.length) {
+            const ponow = przeplyw.ponow; przeplyw = null;
+            if (ponow) sprawdzWode(...ponow);
+        }
+    }
+    // Oddech: głowa pod wodą - powietrza starcza na kilkanaście sekund.
+    const oko = player.eye();
+    const podWoda = world.get(Math.floor(oko.x), Math.floor(oko.y), Math.floor(oko.z)) === WATER;
+    oddech = Math.max(0, Math.min(1, oddech + (podWoda ? -dt / 14 : dt / 3)));
+    if (oddech <= 0) omdlenie('Zabrakło ci powietrza.');
+    return podWoda;
 }
 
 // ---------- Stawianie drabin i pochodni ----------
@@ -450,6 +577,8 @@ function kopanie(dt) {
                 WALLS.forEach(([dx, dz], o) => {
                     if (world.get(hit.x - dx, hit.y, hit.z - dz) === PLACED_LADDERS[o]) { zmienBlok(hit.x - dx, hit.y, hit.z - dz, AIR); stan.drabiny++; }
                 });
+                poWstrzasie(hit.x, hit.y, hit.z);
+                sprawdzWode(hit.x, hit.y, hit.z);
                 if (eko.dodajUrobek(stan, hit.id)) { komunikat('+1 ' + b.nazwa); zapisz(); }
                 stuk(0.6, 0.4); odswiezHud();
                 postep = 0; cel = null;
@@ -475,7 +604,8 @@ function kopanie(dt) {
 }
 
 // ---------- Pętla gry ----------
-const NIEBO = new THREE.Color(0x8ec5ee), CIEMNOSC = new THREE.Color(0x020203);
+const NIEBO = new THREE.Color(0x8ec5ee), CIEMNOSC = new THREE.Color(0x020203), GLEBINA = new THREE.Color(0x0c3050);
+let podWoda = false, lampaOstrzezenie = 0;
 function klatka(dt) {
     if (gra && !sklepOtwarty && !komendaOtwarta()) {
         player.update(dt, {
@@ -487,6 +617,8 @@ function klatka(dt) {
             sprint: klawisze.has('ControlLeft')
         });
         kopanie(dt);
+        zawaly(dt);
+        podWoda = woda(dt);
 
         // Lina ratunkowa: przytrzymaj R.
         linaCzas = klawisze.has('KeyR') || palce.lina ? linaCzas + dt : 0;
@@ -494,20 +626,37 @@ function klatka(dt) {
     }
 
     const oko = player.eye();
-    camera.position.set(oko.x, oko.y, oko.z);
+    camera.position.set(oko.x + (Math.random() - 0.5) * wstrzas * 0.06, oko.y + (Math.random() - 0.5) * wstrzas * 0.06, oko.z);
     camera.rotation.set(player.pitch, player.yaw, 0);
     lampa.position.copy(camera.position);
 
     // Im głębiej pod ziemią, tym ciemniej - zostaje tylko lampa.
     const pod = Math.max(0, Math.min(1, (kopalnia.groundY + 1 + EYE_HEIGHT - oko.y) / 5));
-    const zasieg = eko.LAMPY[stan.lampa].zasieg;
+    // Lampa: pod ziemią ubywa paliwa, na powierzchni dolewa się do pełna.
+    // Pusta lampa ledwo się tli - wtedy ratują pochodnie.
+    if (gra && !sklepOtwarty) {
+        if (pod > 0.5) stan.paliwo = Math.max(0, stan.paliwo - dt);
+        else if (pod === 0 && eko.poziomPaliwa(stan) < 1) { if (eko.poziomPaliwa(stan) < 0.9) komunikat('Lampa napełniona'); eko.napelnijLampe(stan); lampaOstrzezenie = 0; }
+    }
+    const paliwo = eko.poziomPaliwa(stan);
+    if (paliwo <= 0 && lampaOstrzezenie < 2) { lampaOstrzezenie = 2; komunikat('Lampa zgasła! Wracaj na powierzchnię.', 4000); }
+    else if (paliwo > 0 && paliwo < 0.2 && lampaOstrzezenie < 1) { lampaOstrzezenie = 1; komunikat('Lampa przygasa — kończy się paliwo.', 4000); }
+    const moc = paliwo <= 0 ? 0.12 : paliwo < 0.2 ? 0.7 + 0.3 * Math.sin(performance.now() / 70) * Math.sin(performance.now() / 23) : 1;
+    const zasieg = eko.LAMPY[stan.lampa].zasieg * (paliwo <= 0 ? 0.4 : 1);
     scene.background.copy(NIEBO).lerp(CIEMNOSC, pod);
+    if (podWoda) scene.background.lerp(GLEBINA, 0.85);
     scene.fog.color.copy(scene.background);
-    scene.fog.near = 2 + (1 - pod) * 30; scene.fog.far = 80 + (zasieg * 1.4 - 80) * pod;
+    scene.fog.near = podWoda ? 0.3 : 2 + (1 - pod) * 30;
+    scene.fog.far = podWoda ? 9 : 80 + (zasieg * 1.4 - 80) * pod;
     ambient.intensity = 2.2 - 2.1 * pod;
     sun.intensity = 1.6 * (1 - pod);
     lampa.distance = zasieg * 1.3;
-    lampa.intensity = (4 + zasieg * 1.6) * (0.25 + 0.75 * pod);
+    lampa.intensity = (6 + zasieg * 0.15) * (0.25 + 0.75 * pod) * moc;
+    $('lampa-pasek').firstElementChild.style.width = Math.round(paliwo * 100) + '%';
+    $('lampa-pasek').classList.toggle('malo', paliwo < 0.2);
+    $('oddech').style.display = oddech < 1 ? 'block' : 'none';
+    $('oddech').firstElementChild.style.width = Math.round(oddech * 100) + '%';
+    $('podwoda').style.opacity = podWoda ? 1 : 0;
     glowica.material.color.setHex(eko.KILOFY[stan.kilof].kolor);
 
     const glebokosc = Math.max(0, Math.floor(kopalnia.groundY + 1 - player.pos.y));
@@ -553,6 +702,7 @@ renderer.setAnimationLoop(teraz => {
 window.__gra = {
     get stan() { return stan; }, get player() { return player; }, get kopalnia() { return kopalnia; },
     start() { bezMyszy = true; zlapMysz(); }, palce, dotyk: DOTYK, wybierz, postaw, zapisz,
-    get pochodnie() { return pochodnie; }, komenda: wykonajKomende, otworzSklep,
+    get pochodnie() { return pochodnie; }, get oddech() { return oddech; }, get spadki() { return spadki.length + lecace.length; },
+    get przeplyw() { return !!przeplyw; }, kop(x, y, z) { zmienBlok(x, y, z, AIR); poWstrzasie(x, y, z); sprawdzWode(x, y, z); }, komenda: wykonajKomende, otworzSklep,
     mysz(v) { myszWcisnieta = v; }, klawisz(k, v) { v ? klawisze.add(k) : klawisze.delete(k); }
 };

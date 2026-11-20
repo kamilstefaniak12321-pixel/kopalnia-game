@@ -185,6 +185,76 @@ import { TORCH, LADDER_E, PLACED_LADDERS, WALLS, ladderWall, isLadder } from '..
     ok++; console.log('  ok  drabiny, pochodnie, światło, zapis zmian');
 }
 
+// --- Zawały, woda, lampa ---
+import { shaken, pulled, landingY, isHanging } from '../src/cavein.js';
+import { findWater, settleWater } from '../src/water.js';
+import { UNSTABLE, WATER, RUBBLE, isOpen } from '../src/blocks.js';
+import { World } from '../src/mine.js';
+{
+    // Mały świat z litego kamienia do prób.
+    const w = new World(12, 12, 12); w.data.fill(STONE);
+    // Krucha skała nad pustką wisi; podparta - nie.
+    w.set(5, 5, 5, UNSTABLE); w.set(6, 5, 5, UNSTABLE); w.set(5, 6, 5, UNSTABLE); w.set(9, 5, 5, UNSTABLE);
+    assert.ok(!isHanging(w, 5, 5, 5));
+    for (let y = 2; y <= 4; y++) { w.set(5, y, 5, AIR); w.set(6, y, 5, AIR); }
+    assert.ok(isHanging(w, 5, 5, 5) && isHanging(w, 6, 5, 5) && !isHanging(w, 5, 6, 5) && !isHanging(w, 9, 5, 5));
+    assert.equal(shaken(w, 5, 3, 5).length, 2, 'kopanie 2 bloki niżej zrywa wiszące bloki');
+    assert.equal(shaken(w, 5, 2, 9).length, 0, 'kopanie daleko niczego nie zrywa');
+    assert.deepEqual(pulled(w, 5, 5, 5).sort(), [[5, 6, 5], [6, 5, 5]], 'spadający blok ciągnie bok i górę');
+    assert.equal(landingY(w, 5, 5, 5), 2);
+
+    // Woda: zbiornik 2x2x2 (8 pól) nad chodnikiem; po przebiciu spływa na dno.
+    const v = new World(12, 12, 12); v.data.fill(STONE);
+    for (let x = 2; x < 4; x++) for (let y = 6; y < 8; y++) for (let z = 2; z < 4; z++) v.set(x, y, z, WATER);
+    for (let x = 4; x < 10; x++) for (let y = 2; y < 4; y++) v.set(x, y, 2, AIR);      // chodnik 6x2x1 = 12 pól, niżej
+    assert.deepEqual(settleWater(v, v.index(2, 6, 2)), { remove: [], add: [] }, 'zamknięty zbiornik stoi');
+    assert.equal(findWater(v, 6, 2, 2), -1, 'chodnik nie jest połączony z wodą');
+    for (let y = 2; y < 7; y++) v.set(4, y, 2, AIR);                                    // przebicie: pion przy zbiorniku
+    const start = findWater(v, 4, 6, 2);
+    assert.ok(start >= 0);
+    const plan = settleWater(v, start);
+    assert.equal(plan.remove.length, plan.add.length);
+    for (const i of plan.remove) v.data[i] = AIR;
+    for (const i of plan.add) v.data[i] = WATER;
+    let ile = 0, najwyzej = 0;
+    for (let i = 0; i < v.data.length; i++) if (v.data[i] === WATER) { ile++; najwyzej = Math.max(najwyzej, Math.floor(i / 144)); }
+    assert.equal(ile, 8, 'wody jest tyle samo');
+    assert.ok(najwyzej <= 3, 'woda spłynęła do chodnika: ' + najwyzej);
+    for (let x = 4; x < 10; x++) assert.equal(v.get(x, 2, 2), WATER, 'dno chodnika zalane');
+    assert.deepEqual(settleWater(v, findWater(v, 4, 2, 2)), { remove: [], add: [] }, 'po przelaniu woda stoi');
+
+    // W wygenerowanych kopalniach: zbiorniki są szczelne i spokojne, krucha skała jest.
+    for (const def of MINES) {
+        const m = generateMine(def, 21), g = m.world;
+        let krucha = 0, woda = 0;
+        for (const b of g.data) { if (b === UNSTABLE) krucha++; if (b === WATER) woda++; }
+        assert.ok(krucha > 20 && woda > 50 && m.zbiorniki.length >= 2, def.nazwa);
+        for (const [x, y, z] of m.zbiorniki) {
+            assert.equal(g.get(x, y, z), WATER);
+            assert.deepEqual(settleWater(g, g.index(x, y, z)), { remove: [], add: [] }, 'zbiornik stoi: ' + def.nazwa);
+        }
+    }
+    // Gracz w wodzie: tonie powoli, płynie w górę.
+    const b = new World(8, 12, 8); b.data.fill(STONE);
+    for (let y = 1; y < 9; y++) b.set(4, y, 4, WATER);
+    const p = new Player(b); p.pos.x = 4.5; p.pos.z = 4.5; p.pos.y = 6;
+    for (let i = 0; i < 30; i++) p.update(1 / 60, {});
+    assert.ok(p.inWater && p.vel.y < 0 && p.vel.y >= -2.2, 'powolne opadanie: ' + p.vel.y);
+    for (let i = 0; i < 60; i++) p.update(1 / 60, { jump: true });
+    assert.ok(p.pos.y > 6.5, 'płynięcie w górę');
+    // Lampa i strata urobku.
+    const s = eko.nowyStan();
+    assert.equal(eko.poziomPaliwa(s), 1);
+    s.paliwo = 60; assert.equal(eko.poziomPaliwa(s), 0.25);
+    s.kasa = 500; eko.kupUlepszenie(s, 'lampa'); assert.equal(eko.poziomPaliwa(s), 1, 'nowa lampa jest pełna');
+    s.paliwo = 0; eko.napelnijLampe(s); assert.equal(s.paliwo, eko.LAMPY[1].paliwo);
+    s.przedmioty = { [COAL]: 7, [DIAMOND]: 1 };
+    assert.equal(eko.zgubPoloweUrobku(s), 3);
+    assert.deepEqual(s.przedmioty, { [COAL]: 4, [DIAMOND]: 1 });
+    assert.ok(isOpen(WATER) && isOpen(AIR) && !isOpen(RUBBLE) && !isSolid(WATER));
+    ok++; console.log('  ok  zawały, woda, lampa, omdlenie');
+}
+
 // --- Wersja i pliki aplikacji ---
 import { readFileSync, existsSync } from 'node:fs';
 import { VERSION } from '../src/config.js';

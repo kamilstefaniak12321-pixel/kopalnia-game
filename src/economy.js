@@ -19,11 +19,12 @@ export const PLECAKI = [
     { nazwa: 'Plecak górniczy', pojemnosc: 80, cena: 700 },
     { nazwa: 'Wzmacniany kosz', pojemnosc: 160, cena: 3000 }
 ];
+// paliwo - na ile sekund pod ziemią starcza pełna lampa
 export const LAMPY = [
-    { nazwa: 'Świeczka', zasieg: 7, cena: 0 },
-    { nazwa: 'Lampa naftowa', zasieg: 11, cena: 120 },
-    { nazwa: 'Lampa karbidowa', zasieg: 16, cena: 600 },
-    { nazwa: 'Reflektor górniczy', zasieg: 24, cena: 2500 }
+    { nazwa: 'Świeczka', zasieg: 7, cena: 0, paliwo: 240 },
+    { nazwa: 'Lampa naftowa', zasieg: 11, cena: 120, paliwo: 360 },
+    { nazwa: 'Lampa karbidowa', zasieg: 16, cena: 600, paliwo: 540 },
+    { nazwa: 'Reflektor górniczy', zasieg: 24, cena: 2500, paliwo: 900 }
 ];
 // Zapasy, które się zużywają: stawiane w kopalni drabiny i pochodnie.
 export const ZAPASY = {
@@ -33,7 +34,7 @@ export const ZAPASY = {
 const LISTY = { kilof: KILOFY, plecak: PLECAKI, lampa: LAMPY };
 
 export function nowyStan() {
-    return { kasa: 0, kilof: 0, plecak: 0, lampa: 0, kopalnie: [0], kopalnia: 0, ziarno: 1, przedmioty: {}, drabiny: 8, pochodnie: 4 };
+    return { kasa: 0, kilof: 0, plecak: 0, lampa: 0, kopalnie: [0], kopalnia: 0, ziarno: 1, przedmioty: {}, drabiny: 8, pochodnie: 4, paliwo: LAMPY[0].paliwo };
 }
 
 export function ileWPlecaku(s) { return Object.values(s.przedmioty).reduce((a, b) => a + b, 0); }
@@ -65,6 +66,7 @@ export function kupUlepszenie(s, rodzaj) {
     const n = nastepne(s, rodzaj);
     if (!n || s.kasa < n.cena) return false;
     s.kasa -= n.cena; s[rodzaj]++;
+    if (rodzaj === 'lampa') s.paliwo = n.paliwo;      // nowa lampa jest pełna
     return true;
 }
 export function kupKopalnie(s, i) {
@@ -78,4 +80,20 @@ export function kupZapas(s, rodzaj) {
     if (!z || s.kasa < z.cena) return false;
     s.kasa -= z.cena; s[rodzaj] = (s[rodzaj] || 0) + z.ile;
     return true;
+}
+
+// Lampa: ile paliwa zostało (0..1) i dolewanie do pełna na powierzchni.
+export function poziomPaliwa(s) { return Math.max(0, Math.min(1, s.paliwo / LAMPY[s.lampa].paliwo)); }
+export function napelnijLampe(s) { s.paliwo = LAMPY[s.lampa].paliwo; }
+
+// Omdlenie w kopalni (zawał, brak powietrza): górnik gubi połowę
+// każdego surowca (przy nieparzystej liczbie zostaje mu ta większa).
+export function zgubPoloweUrobku(s) {
+    let zgubione = 0;
+    for (const id of Object.keys(s.przedmioty)) {
+        const strata = Math.floor(s.przedmioty[id] / 2);
+        s.przedmioty[id] -= strata; zgubione += strata;
+        if (!s.przedmioty[id]) delete s.przedmioty[id];
+    }
+    return zgubione;
 }

@@ -14,6 +14,8 @@
 1. **Kopalnia, która jest „twoja”** — zapis wykopanych bloków, stawianie
    drabin i pochodni. *(zrobione w 0.3.0)*
 2. **Zagrożenia i napięcie** — zapas światła w lampie, zawały, woda.
+   *(zrobione w 0.4.0; bez śmierci: wypadek = powrót na powierzchnię
+   i strata połowy urobku)*
 3. **Więcej do kupienia** — wózek, winda, dynamit, nowe kopalnie
    z własnym charakterem.
 4. **Surowce i minerały** — duże rozszerzenie listy (patrz „Kierunek”),

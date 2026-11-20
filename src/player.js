@@ -4,7 +4,7 @@
 // Pozycja gracza to środek jego stóp.
 // ------------------------------------------------------------
 import { PLAYER_WIDTH, PLAYER_HEIGHT, EYE_HEIGHT, WALK_SPEED, SPRINT_SPEED, JUMP_SPEED, GRAVITY, LADDER_SPEED } from './config.js';
-import { isSolid, isLadder } from './blocks.js';
+import { WATER, isSolid, isLadder } from './blocks.js';
 
 const HW = PLAYER_WIDTH / 2, EPS = 0.001;
 
@@ -14,7 +14,7 @@ export class Player {
         this.pos = { x: 0, y: 0, z: 0 };
         this.vel = { x: 0, y: 0, z: 0 };
         this.yaw = 0; this.pitch = 0;
-        this.onGround = false; this.onLadder = false;
+        this.onGround = false; this.onLadder = false; this.inWater = false;
     }
 
     eye() { return { x: this.pos.x, y: this.pos.y + EYE_HEIGHT, z: this.pos.z }; }
@@ -54,7 +54,8 @@ export class Player {
         const fx = input.fx ?? ((input.forward ? 1 : 0) - (input.back ? 1 : 0));
         const sx = input.sx ?? ((input.right ? 1 : 0) - (input.left ? 1 : 0));
         const len = Math.max(1, Math.hypot(fx, sx));
-        const speed = input.sprint ? SPRINT_SPEED : WALK_SPEED;
+        this.inWater = this.touches(id => id === WATER);
+        const speed = (input.sprint ? SPRINT_SPEED : WALK_SPEED) * (this.inWater ? 0.55 : 1);
         const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
         const tx = (-sin * fx + cos * sx) / len * speed;
         const tz = (-cos * fx - sin * sx) / len * speed;
@@ -65,6 +66,10 @@ export class Player {
         this.onLadder = this.touches(isLadder);
         if (this.onLadder) {
             this.vel.y = input.jump ? LADDER_SPEED : input.down ? -LADDER_SPEED : 0;
+        } else if (this.inWater) {
+            // W wodzie: powolne opadanie, skok = płynięcie w górę.
+            this.vel.y = Math.max(-2.2, this.vel.y * Math.max(0, 1 - 4 * dt) - GRAVITY * 0.2 * dt);
+            if (input.jump) this.vel.y = 2.8; else if (input.down) this.vel.y = -2.8;
         } else {
             this.vel.y = Math.max(-40, this.vel.y - GRAVITY * dt);
             if (input.jump && this.onGround) this.vel.y = JUMP_SPEED;

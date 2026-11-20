@@ -1,5 +1,18 @@
 # Zmiany
 
+## 0.4.0
+
+- Lampa ma zapas paliwa: pod ziemią go ubywa, na powierzchni dolewa się
+  sam. Pusta lampa ledwo się tli - wtedy ratują pochodnie. Lepsze lampy
+  świecą dłużej.
+- Zawały: w stropach chodników trafia się krucha, spękana skała. Kopanie
+  w pobliżu (2 bloki) zrywa ją i pociąga sąsiednie bloki; zostaje rumosz.
+- Woda: w skale są zamknięte zbiorniki. Po przebiciu się woda przelewa
+  się do niższych chodników. W wodzie chodzi się wolniej i można pływać,
+  a pod wodą kończy się powietrze.
+- W grze się nie ginie: po zawale albo braku powietrza ratownicy wynoszą
+  górnika na powierzchnię, ale połowa urobku zostaje w kopalni.
+
 ## 0.3.0
 
 - Kopalnia pamięta, co w niej zrobisz: wykopane bloki zostają po

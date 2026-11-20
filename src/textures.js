@@ -12,7 +12,7 @@ const S = TILE;
 // Kolejność w atlasie.
 export const TILE_NAMES = ['trawa_gora', 'trawa_bok', 'ziemia', 'kamien', 'lupek', 'bazalt',
     'lita_skala', 'deski', 'drabina', 'wegiel', 'miedz', 'zelazo', 'srebro', 'zloto',
-    'szmaragd', 'rubin', 'diament', 'pochodnia'];
+    'szmaragd', 'rubin', 'diament', 'pochodnia', 'krucha', 'rumosz'];
 export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
 // Gładki szum, który powtarza się co 64 piksele.
@@ -120,6 +120,24 @@ function drabina() {
     return buf;
 }
 
+function rumosz() {
+    // Luźne kamienie: komórki o różnych odcieniach z ciemnymi szczelinami.
+    const buf = new Uint8ClampedArray(S * S * 4), rnd = mulberry32(77), pts = [];
+    for (let i = 0; i < 34; i++) pts.push([rnd() * S, rnd() * S, 0.7 + rnd() * 0.5]);
+    const wrap = d => { d = Math.abs(d); return d > S / 2 ? S - d : d; };
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        let d1 = 1e9, d2 = 1e9, k = 1;
+        for (const [px, py, pk] of pts) {
+            const dd = Math.hypot(wrap(x - px), wrap(y - py));
+            if (dd < d1) { d2 = d1; d1 = dd; k = pk; } else if (dd < d2) d2 = dd;
+        }
+        if (d2 - d1 < 1.6) k = 0.38;
+        k *= 0.92 + hash2(x, y, 78) * 0.16;
+        put(buf, x, y, 120 * k, 112 * k, 104 * k);
+    }
+    return buf;
+}
+
 function pochodnia() {
     const buf = new Uint8ClampedArray(S * S * 4);   // przezroczyste tło
     for (let y = 26; y < S; y++) for (let x = 28; x < 36; x++) {           // trzonek
@@ -150,6 +168,9 @@ export function makeTile(name) {
         case 'deski': return deski();
         case 'drabina': return drabina();
         case 'pochodnia': return pochodnia();
+        // Krucha skała ma być widoczna z daleka: jaśniejsza, gęsto spękana.
+        case 'krucha': return skala([150, 140, 122], 15, { odcienie: 4, kontrast: 0.45, pekniecia: 0.07, drobinki: 0.06 });
+        case 'rumosz': return rumosz();
         case 'wegiel': return ruda(kamien(), [30, 30, 36], 101, { ile: 9 });
         case 'miedz': return ruda(kamien(), [214, 120, 62], 102);
         case 'zelazo': return ruda(kamien(), [206, 168, 138], 103);

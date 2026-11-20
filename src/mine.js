@@ -6,7 +6,7 @@
 // ------------------------------------------------------------
 import { WORLD_X, WORLD_Z, SURFACE_AIR } from './config.js';
 import { mulberry32, noise2 } from './rng.js';
-import { AIR, GRASS, DIRT, BEDROCK, PLANKS, LADDER, BLOCKS, isSolid, isHostRock } from './blocks.js';
+import { AIR, GRASS, DIRT, BEDROCK, PLANKS, LADDER, UNSTABLE, WATER, BLOCKS, isSolid, isHostRock } from './blocks.js';
 
 export class World {
     constructor(w, h, d) {
@@ -154,6 +154,38 @@ export function generateMine(def, seed) {
         zyla(x + dx * ri(1, 2), y + ri(0, 1), z + dz * ri(1, 2), r[0], r[4]);
     }
 
+    // --- 6b. Krucha skała: spękane płaty w stropach chodników ---
+    for (const [x, y, z] of tunel) {
+        if (rnd() > 0.045) continue;
+        let sy = y;
+        while (sy < groundY - 5 && !world.solid(x, sy, z)) sy++;          // strop nad chodnikiem
+        let bx = x, by = sy, bz = z;
+        for (let i = 0, n = ri(5, 14); i < n; i++) {
+            if (by <= groundY - 5 && isHostRock(world.get(bx, by, bz))) world.set(bx, by, bz, UNSTABLE);
+            const o = ri(0, 5);
+            if (o === 0) bx++; else if (o === 1) bx--; else if (o === 2) bz++; else if (o === 3) bz--; else if (o === 4) by++; else by = Math.max(sy, by - 1);
+        }
+    }
+
+    // --- 6c. Zbiorniki wody: zamknięte, pełne komory w skale ---
+    const zbiorniki = [];
+    for (let i = 0; i < Math.floor(def.depth / 6); i++) {
+        const x = ri(7, W - 8), y = ri(5, groundY - 14), z = ri(7, D - 8);
+        const rx = 2.2 + rnd() * 1.6, ry = 1.4 + rnd() * 1.2;
+        if (Math.abs(x - cx) < 9 && Math.abs(z - cz) < 9) continue;         // nie przy szybie
+        const pola = []; let szczelny = true;
+        for (let dy = -Math.ceil(ry) - 1; dy <= Math.ceil(ry) + 1 && szczelny; dy++)
+            for (let dz = -Math.ceil(rx) - 1; dz <= Math.ceil(rx) + 1 && szczelny; dz++)
+                for (let dx = -Math.ceil(rx) - 1; dx <= Math.ceil(rx) + 1; dx++) {
+                    const id = world.get(x + dx, y + dy, z + dz);
+                    if (!isSolid(id) || BLOCKS[id].staly || y + dy < 1) { szczelny = false; break; }
+                    if ((dx * dx + dz * dz) / (rx * rx) + (dy * dy) / (ry * ry) <= 1) pola.push([x + dx, y + dy, z + dz]);
+                }
+        if (!szczelny) continue;
+        for (const [a, b, c] of pola) world.set(a, b, c, WATER);
+        zbiorniki.push([x, y, z]);
+    }
+
     // --- 7. Powierzchnia: szalunek wokół szybu i budka skupu ---
     for (let dz = -1; dz <= 2; dz++) for (let dx = -1; dx <= 2; dx++) {
         const wSzybie = dx >= 0 && dx <= 1 && dz >= 0 && dz <= 1;
@@ -168,7 +200,7 @@ export function generateMine(def, seed) {
     world.set(sx + 1, gy, sz + 1, PLANKS); world.set(sx + 1, gy, sz + 2, PLANKS);                         // lada
 
     return {
-        world, groundY, seed,
+        world, groundY, seed, zbiorniki,
         spawn: { x: cx - 3.5, y: groundY + 1, z: cz + 1 },
         shaft: { x: cx, z: cz, bottomY },
         shop: { x: sx + 0.5, z: sz + 2 }

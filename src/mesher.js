@@ -5,7 +5,7 @@
 // Czysta logika: zwraca zwykłe tablice liczb.
 // ------------------------------------------------------------
 import { CHUNK, ATLAS_TILES, TILE } from './config.js';
-import { AIR, TORCH, BLOCKS, isSolid, ladderWall } from './blocks.js';
+import { AIR, TORCH, WATER, BLOCKS, isSolid, ladderWall } from './blocks.js';
 import { TORCH_LIGHT } from './light.js';
 
 const FACE_LIGHT = { '0+': 0.8, '0-': 0.8, '1+': 1.0, '1-': 0.5, '2+': 0.66, '2-': 0.66 };
@@ -14,6 +14,7 @@ const INSET = 0.02 / TILE;   // żeby sąsiednia tekstura atlasu nie przeciekał
 
 export function meshChunk(world, cx, cy, cz, tileIndex) {
     const pos = [], nor = [], uv = [], col = [], lit = [], idx = [];
+    const woda = { pos: [], nor: [], lit: [], idx: [] };   // osobna, przezroczysta siatka
     const jasnosc = l => Math.pow(l / TORCH_LIGHT, 1.4);
     const x0 = cx * CHUNK, y0 = cy * CHUNK, z0 = cz * CHUNK;
     const p = [0, 0, 0], q = [0, 0, 0];
@@ -30,6 +31,26 @@ export function meshChunk(world, cx, cy, cz, tileIndex) {
         const id = world.get(x, y, z);
         if (id === AIR) continue;
         const def = BLOCKS[id];
+
+        if (id === WATER) {
+            // Ściany wody widoczne z powietrza; lustro wody lekko obniżone.
+            const top = world.get(x, y + 1, z) === WATER ? 1 : 0.88, l = jasnosc(world.getLight(x, y, z));
+            const c = [x, y, z];
+            for (let a = 0; a < 3; a++) for (let s = -1; s <= 1; s += 2) {
+                p[0] = x; p[1] = y; p[2] = z; p[a] += s;
+                const n = world.get(p[0], p[1], p[2]);
+                if (n === WATER || isSolid(n)) continue;
+                const u = (a + 1) % 3, v = (a + 2) % 3, base = woda.pos.length / 3;
+                for (const [du, dv] of CORNERS) {
+                    q[a] = c[a] + (s > 0 ? 1 : 0); q[u] = c[u] + du; q[v] = c[v] + dv;
+                    woda.pos.push(q[0], q[1] > y ? y + top : y, q[2]);
+                    woda.nor.push(a === 0 ? s : 0, a === 1 ? s : 0, a === 2 ? s : 0);
+                    woda.lit.push(l);
+                }
+                woda.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+            }
+            continue;
+        }
 
         // Płaski prostokąt widoczny z obu stron (drabina, pochodnia).
         const plaski = (x1, z1, x2, z2, nx, nz, swiatlo) => {
@@ -96,5 +117,5 @@ export function meshChunk(world, cx, cy, cz, tileIndex) {
             else for (let i = 5; i >= 0; i--) idx.push(base + order[i]);
         }
     }
-    return { pos, nor, uv, col, lit, idx };
+    return { pos, nor, uv, col, lit, idx, woda };
 }

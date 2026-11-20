@@ -66,3 +66,13 @@ body.dotyk #hud { left: calc(12px + env(safe-area-inset-left)); }
     .okno table { font-size: 12px; margin: 4px auto; } #graj { margin-top: 6px; padding: 8px 36px; }
     #urobek div { font-size: 11px; min-width: 30px; padding: 2px 4px; } #urobek img { width: 22px; height: 22px; }
 }
+
+/* ---------- Zagrożenia: lampa, oddech, woda, omdlenie ---------- */
+.pasek { display: inline-block; width: 90px; height: 9px; border: 2px solid #000; background: #0008; vertical-align: middle; }
+.pasek i { display: block; height: 100%; background: var(--zloto); }
+.pasek.malo i { background: #e2542c; }
+#oddech { position: fixed; top: calc(50% + 40px); left: 50%; margin-left: -47px; display: none; }
+#oddech i { background: #6fc3ff; }
+#podwoda, #zaciemnienie { position: fixed; inset: 0; pointer-events: none; opacity: 0; }
+#podwoda { background: #0b4a8a55; transition: opacity .2s; }
+#zaciemnienie { background: #000; }
