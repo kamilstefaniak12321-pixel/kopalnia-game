@@ -4,7 +4,7 @@
 // Pozycja gracza to środek jego stóp.
 // ------------------------------------------------------------
 import { PLAYER_WIDTH, PLAYER_HEIGHT, EYE_HEIGHT, WALK_SPEED, SPRINT_SPEED, JUMP_SPEED, GRAVITY, LADDER_SPEED } from './config.js';
-import { LADDER, AIR } from './blocks.js';
+import { isSolid, isLadder } from './blocks.js';
 
 const HW = PLAYER_WIDTH / 2, EPS = 0.001;
 
@@ -62,7 +62,7 @@ export class Player {
         this.vel.x += (tx - this.vel.x) * k;
         this.vel.z += (tz - this.vel.z) * k;
 
-        this.onLadder = this.touches(id => id === LADDER);
+        this.onLadder = this.touches(isLadder);
         if (this.onLadder) {
             this.vel.y = input.jump ? LADDER_SPEED : input.down ? -LADDER_SPEED : 0;
         } else {
@@ -78,7 +78,8 @@ export class Player {
     }
 }
 
-// Pierwszy blok na linii wzroku (przechodzi przez powietrze i drabinę).
+// Pierwszy blok na linii wzroku (przechodzi przez powietrze, drabiny
+// i pochodnie). nx, ny, nz - ściana, w którą trafił promień.
 export function raycast(world, o, d, maxDist) {
     let x = Math.floor(o.x), y = Math.floor(o.y), z = Math.floor(o.z);
     const sx = Math.sign(d.x), sy = Math.sign(d.y), sz = Math.sign(d.z);
@@ -86,13 +87,14 @@ export function raycast(world, o, d, maxDist) {
     let tx = sx ? (sx > 0 ? x + 1 - o.x : o.x - x) * tdx : Infinity;
     let ty = sy ? (sy > 0 ? y + 1 - o.y : o.y - y) * tdy : Infinity;
     let tz = sz ? (sz > 0 ? z + 1 - o.z : o.z - z) * tdz : Infinity;
-    let t = 0;
+    let t = 0, nx = 0, ny = 0, nz = 0;
     while (t <= maxDist) {
         const id = world.get(x, y, z);
-        if (id !== AIR && id !== LADDER) return { x, y, z, id, dist: t };
-        if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; }
-        else if (ty < tz) { y += sy; t = ty; ty += tdy; }
-        else { z += sz; t = tz; tz += tdz; }
+        if (isSolid(id)) return { x, y, z, id, dist: t, nx, ny, nz };
+        nx = ny = nz = 0;
+        if (tx < ty && tx < tz) { x += sx; t = tx; tx += tdx; nx = -sx; }
+        else if (ty < tz) { y += sy; t = ty; ty += tdy; ny = -sy; }
+        else { z += sz; t = tz; tz += tdz; nz = -sz; }
     }
     return null;
 }

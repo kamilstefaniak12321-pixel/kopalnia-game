@@ -25,10 +25,15 @@ export const LAMPY = [
     { nazwa: 'Lampa karbidowa', zasieg: 16, cena: 600 },
     { nazwa: 'Reflektor górniczy', zasieg: 24, cena: 2500 }
 ];
+// Zapasy, które się zużywają: stawiane w kopalni drabiny i pochodnie.
+export const ZAPASY = {
+    drabiny: { nazwa: 'Drabiny', opis: 'Stawiane przy ścianie — droga w górę z każdej dziury.', ile: 5, cena: 15 },
+    pochodnie: { nazwa: 'Pochodnie', opis: 'Stawiane na podłożu — światło, które zostaje w kopalni.', ile: 3, cena: 12 }
+};
 const LISTY = { kilof: KILOFY, plecak: PLECAKI, lampa: LAMPY };
 
 export function nowyStan() {
-    return { kasa: 0, kilof: 0, plecak: 0, lampa: 0, kopalnie: [0], kopalnia: 0, ziarno: 1, przedmioty: {} };
+    return { kasa: 0, kilof: 0, plecak: 0, lampa: 0, kopalnie: [0], kopalnia: 0, ziarno: 1, przedmioty: {}, drabiny: 8, pochodnie: 4 };
 }
 
 export function ileWPlecaku(s) { return Object.values(s.przedmioty).reduce((a, b) => a + b, 0); }
@@ -66,5 +71,11 @@ export function kupKopalnie(s, i) {
     const m = MINES[i];
     if (!m || s.kopalnie.includes(i) || s.kasa < m.cena) return false;
     s.kasa -= m.cena; s.kopalnie.push(i);
+    return true;
+}
+export function kupZapas(s, rodzaj) {
+    const z = ZAPASY[rodzaj];
+    if (!z || s.kasa < z.cena) return false;
+    s.kasa -= z.cena; s[rodzaj] = (s[rodzaj] || 0) + z.ile;
     return true;
 }

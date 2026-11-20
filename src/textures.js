@@ -12,7 +12,7 @@ const S = TILE;
 // Kolejność w atlasie.
 export const TILE_NAMES = ['trawa_gora', 'trawa_bok', 'ziemia', 'kamien', 'lupek', 'bazalt',
     'lita_skala', 'deski', 'drabina', 'wegiel', 'miedz', 'zelazo', 'srebro', 'zloto',
-    'szmaragd', 'rubin', 'diament'];
+    'szmaragd', 'rubin', 'diament', 'pochodnia'];
 export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
 // Gładki szum, który powtarza się co 64 piksele.
@@ -120,6 +120,21 @@ function drabina() {
     return buf;
 }
 
+function pochodnia() {
+    const buf = new Uint8ClampedArray(S * S * 4);   // przezroczyste tło
+    for (let y = 26; y < S; y++) for (let x = 28; x < 36; x++) {           // trzonek
+        const k = (x === 28 ? 1.2 : x === 35 ? 0.6 : 0.9) * (0.9 + hash2(x >> 1, y >> 2, 91) * 0.2);
+        put(buf, x, y, 132 * k, 92 * k, 52 * k);
+    }
+    for (let y = 4; y < 28; y++) for (let x = 20; x < 44; x++) {           // płomień
+        const dx = (x - 31.5) / (4 + (y - 4) * 0.33), dy = (y - 27) / 23;
+        const d = dx * dx + dy * dy * 0.9 + (hash2(x >> 1, y >> 1, 92) - 0.5) * 0.25;
+        if (d > 1) continue;
+        if (d < 0.25) put(buf, x, y, 255, 250, 200); else if (d < 0.6) put(buf, x, y, 255, 200, 70); else put(buf, x, y, 240, 120, 30);
+    }
+    return buf;
+}
+
 export function makeTile(name) {
     const kamien = () => skala([128, 128, 134], 11);
     const lupek = () => skala([78, 86, 102], 12, { odcienie: 4, pekniecia: 0.03 });
@@ -134,6 +149,7 @@ export function makeTile(name) {
         case 'lita_skala': return skala([34, 34, 40], 14, { odcienie: 3, kontrast: 0.9, pekniecia: 0.04 });
         case 'deski': return deski();
         case 'drabina': return drabina();
+        case 'pochodnia': return pochodnia();
         case 'wegiel': return ruda(kamien(), [30, 30, 36], 101, { ile: 9 });
         case 'miedz': return ruda(kamien(), [214, 120, 62], 102);
         case 'zelazo': return ruda(kamien(), [206, 168, 138], 103);

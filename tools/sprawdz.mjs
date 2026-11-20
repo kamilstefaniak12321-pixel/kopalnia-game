@@ -77,7 +77,7 @@ test('tekstury: 64x64, nieprzezroczyste (poza drabiną), kafelkują się', () =>
         assert.equal(t.length, 64 * 64 * 4);
         let pelne = 0;
         for (let i = 3; i < t.length; i += 4) if (t[i] === 255) pelne++;
-        if (n === 'drabina') assert.ok(pelne > 500 && pelne < 3000);
+        if (n === 'drabina' || n === 'pochodnia') assert.ok(pelne > 300 && pelne < 3000);
         else assert.equal(pelne, 64 * 64, n);
     }
     for (const b of BLOCKS) if (b) for (const t of b.tekstury) assert.ok(t in TILE_INDEX, t);
@@ -135,6 +135,54 @@ import { PLAYER_HEIGHT } from '../src/config.js';
     for (let i = 0; i < 60 * 40; i++) p.update(1 / 60, { jump: true });
     assert.ok(p.pos.y >= m.groundY + 1, 'wyjście drabiną na powierzchnię: ' + p.pos.y);
     ok++; console.log('  ok  gracz: grawitacja, ściany, raycast, drabina');
+}
+
+// --- Drabiny, pochodnie, światło, zapis zmian ---
+import { computeLight, TORCH_LIGHT } from '../src/light.js';
+import { applyChanges } from '../src/mine.js';
+import { TORCH, LADDER_E, PLACED_LADDERS, WALLS, ladderWall, isLadder } from '../src/blocks.js';
+{
+    const m = generateMine(MINES[0], 9), w = m.world;
+    assert.equal(computeLight(w), 0);
+    assert.ok(w.light.every(l => l === 0), 'bez pochodni nie ma światła');
+    // Zamknięta komora 3x1x1 wykopana w litej skale: światło słabnie o 1 na blok i nie wychodzi przez ścianę.
+    const y = 3; let x0 = 0, z0 = 0;
+    szukaj: for (let z = 5; z < 60; z++) for (let x = 5; x < 55; x++) {
+        let lite = true;
+        for (let dx = -2; dx <= 5 && lite; dx++) for (let dz = -2; dz <= 2 && lite; dz++) for (let dy = -2; dy <= 2; dy++) if (!w.solid(x + dx, y + dy, z + dz)) { lite = false; break; }
+        if (lite) { x0 = x; z0 = z; break szukaj; }
+    }
+    assert.ok(x0, 'jest kawałek litej skały do testu');
+    const zmiany = {};
+    for (let i = 0; i < 3; i++) zmiany[w.index(x0 + i, y, z0)] = i === 0 ? TORCH : AIR;
+    applyChanges(w, zmiany);
+    assert.equal(w.get(x0, y, z0), TORCH);
+    assert.equal(computeLight(w), 1);
+    assert.deepEqual([0, 1, 2].map(i => w.getLight(x0 + i, y, z0)), [TORCH_LIGHT, TORCH_LIGHT - 1, TORCH_LIGHT - 2]);
+    assert.equal(w.getLight(x0 + 3, y, z0), 0, 'światło nie wchodzi w skałę');
+    assert.equal(w.getLight(x0, y + 2, z0), 0, 'światło nie przechodzi przez strop');
+    // Mesher oddaje światło dla każdego wierzchołka; przy pochodni jest jasno.
+    const g = meshChunk(w, Math.floor(x0 / CHUNK), 0, Math.floor(z0 / CHUNK), TILE_INDEX);
+    assert.equal(g.lit.length, g.pos.length / 3);
+    assert.ok(Math.max(...g.lit) > 0.8 && g.lit.every(l => l >= 0));
+    // Postawiona drabina: nie blokuje, da się po niej wejść.
+    assert.ok(isLadder(LADDER_E) && ladderWall(LADDER_E) === 1 && !isSolid(LADDER_E) && !isSolid(TORCH));
+    assert.equal(PLACED_LADDERS.length, WALLS.length);
+    const sx = m.spawn.x | 0, sz = m.spawn.z | 0, gy = m.groundY;
+    for (let i = 0; i < 4; i++) { w.set(sx, gy - i, sz, i === 3 ? AIR : LADDER_E); w.set(sx, gy - i, sz, LADDER_E); }
+    const p = new Player(w); p.pos.x = sx + 0.5; p.pos.z = sz + 0.5; p.pos.y = gy + 1;
+    for (let i = 0; i < 300; i++) p.update(1 / 60, { down: true });
+    assert.ok(Math.abs(p.pos.y - (gy - 3)) < 0.05, 'zejście po postawionej drabinie: ' + p.pos.y);
+    for (let i = 0; i < 300; i++) p.update(1 / 60, { jump: true });
+    assert.ok(p.pos.y >= gy + 0.9, 'wejście po postawionej drabinie: ' + p.pos.y);
+    // Raycast podaje ścianę, w którą trafił.
+    p.pos.y = gy + 1; p.pos.x = sx + 2.5; p.pitch = -1.5;
+    const hit = raycast(w, p.eye(), p.dir(), 4.5);
+    assert.deepEqual([hit.nx, hit.ny, hit.nz], [0, 1, 0]);
+    // Zapasy.
+    const s = eko.nowyStan(); s.kasa = 20;
+    assert.ok(eko.kupZapas(s, 'drabiny') && s.drabiny === 13 && s.kasa === 5 && !eko.kupZapas(s, 'pochodnie'));
+    ok++; console.log('  ok  drabiny, pochodnie, światło, zapis zmian');
 }
 
 // --- Wersja i pliki aplikacji ---

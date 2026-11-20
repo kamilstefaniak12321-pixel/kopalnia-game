@@ -10,7 +10,9 @@
 
 export const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SLATE = 4, BASALT = 5,
     BEDROCK = 6, PLANKS = 7, LADDER = 8, COAL = 9, COPPER = 10, IRON = 11,
-    SILVER = 12, GOLD = 13, EMERALD = 14, RUBY = 15, DIAMOND = 16;
+    SILVER = 12, GOLD = 13, EMERALD = 14, RUBY = 15, DIAMOND = 16,
+    // Drabiny stawiane przez gracza: przy ścianie -x, +x, -z, +z.
+    LADDER_W = 17, LADDER_E = 18, LADDER_N = 19, LADDER_S = 20, TORCH = 21;
 
 function blok(nazwa, twardosc, poziom, wartosc, tekstury, extra = {}) {
     const t = typeof tekstury === 'string' ? [tekstury, tekstury, tekstury] : tekstury;
@@ -35,9 +37,18 @@ BLOCKS[GOLD] = blok('Złoto', 3.8, 3, 120, 'zloto');
 BLOCKS[EMERALD] = blok('Szmaragd', 5.0, 4, 250, 'szmaragd');
 BLOCKS[RUBY] = blok('Rubin', 5.5, 4, 400, 'rubin');
 BLOCKS[DIAMOND] = blok('Diament', 7.0, 5, 800, 'diament');
+for (const id of [LADDER_W, LADDER_E, LADDER_N, LADDER_S]) BLOCKS[id] = blok('Drabina', 1, 99, 0, 'drabina', { staly: true });
+BLOCKS[TORCH] = blok('Pochodnia', 1, 99, 0, 'pochodnia', { staly: true });
 
-// Drabina nie zatrzymuje gracza i widać przez nią sąsiednie ściany.
-export function isSolid(id) { return id !== AIR && id !== LADDER; }
+// Kierunek ściany, o którą opiera się drabina: [dx, dz].
+export const WALLS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+export const PLACED_LADDERS = [LADDER_W, LADDER_E, LADDER_N, LADDER_S];
+// Numer ściany drabiny (0-3) albo -1, gdy to nie drabina.
+export function ladderWall(id) { return id === LADDER ? 0 : id >= LADDER_W && id <= LADDER_S ? id - LADDER_W : -1; }
+export function isLadder(id) { return ladderWall(id) >= 0; }
+
+// Drabiny i pochodnie nie zatrzymują gracza i widać przez nie ściany.
+export function isSolid(id) { return id !== AIR && id !== TORCH && ladderWall(id) < 0; }
 
 // Skały, w których mogą siedzieć żyły surowców.
 export function isHostRock(id) { return id === STONE || id === SLATE || id === BASALT; }

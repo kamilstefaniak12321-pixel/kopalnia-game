@@ -5,14 +5,16 @@
 // Czysta logika: zwraca zwykłe tablice liczb.
 // ------------------------------------------------------------
 import { CHUNK, ATLAS_TILES, TILE } from './config.js';
-import { AIR, LADDER, BLOCKS, isSolid } from './blocks.js';
+import { AIR, TORCH, BLOCKS, isSolid, ladderWall } from './blocks.js';
+import { TORCH_LIGHT } from './light.js';
 
 const FACE_LIGHT = { '0+': 0.8, '0-': 0.8, '1+': 1.0, '1-': 0.5, '2+': 0.66, '2-': 0.66 };
 const CORNERS = [[0, 0], [1, 0], [1, 1], [0, 1]];
 const INSET = 0.02 / TILE;   // żeby sąsiednia tekstura atlasu nie przeciekała
 
 export function meshChunk(world, cx, cy, cz, tileIndex) {
-    const pos = [], nor = [], uv = [], col = [], idx = [];
+    const pos = [], nor = [], uv = [], col = [], lit = [], idx = [];
+    const jasnosc = l => Math.pow(l / TORCH_LIGHT, 1.4);
     const x0 = cx * CHUNK, y0 = cy * CHUNK, z0 = cz * CHUNK;
     const p = [0, 0, 0], q = [0, 0, 0];
 
@@ -29,13 +31,28 @@ export function meshChunk(world, cx, cy, cz, tileIndex) {
         if (id === AIR) continue;
         const def = BLOCKS[id];
 
-        if (id === LADDER) {
-            // Płaska drabina przy ścianie szybu, widoczna z obu stron.
-            const base = pos.length / 3, X = x + 0.08;
-            pos.push(X, y, z, X, y, z + 1, X, y + 1, z + 1, X, y + 1, z);
-            for (let i = 0; i < 4; i++) { nor.push(1, 0, 0); col.push(1, 1, 1); }
+        // Płaski prostokąt widoczny z obu stron (drabina, pochodnia).
+        const plaski = (x1, z1, x2, z2, nx, nz, swiatlo) => {
+            const base = pos.length / 3;
+            pos.push(x1, y, z1, x2, y, z2, x2, y + 1, z2, x1, y + 1, z1);
+            for (let i = 0; i < 4; i++) { nor.push(nx, 0, nz); col.push(1, 1, 1); lit.push(swiatlo); }
             quadUV(tileIndex[def.tekstury[1]], [[0, 0], [1, 0], [1, 1], [0, 1]]);
             idx.push(base, base + 2, base + 1, base, base + 3, base + 2, base, base + 1, base + 2, base, base + 2, base + 3);
+        };
+        const sciana = ladderWall(id);
+        if (sciana >= 0) {
+            // Drabina 8 cm od ściany, o którą się opiera.
+            const l = jasnosc(world.getLight(x, y, z));
+            if (sciana === 0) plaski(x + 0.08, z, x + 0.08, z + 1, 1, 0, l);
+            else if (sciana === 1) plaski(x + 0.92, z, x + 0.92, z + 1, -1, 0, l);
+            else if (sciana === 2) plaski(x, z + 0.08, x + 1, z + 0.08, 0, 1, l);
+            else plaski(x, z + 0.92, x + 1, z + 0.92, 0, -1, l);
+            continue;
+        }
+        if (id === TORCH) {
+            // Dwa skrzyżowane prostokąty, zawsze w pełni jasne.
+            plaski(x, z, x + 1, z + 1, 0, 0, 1.6);
+            plaski(x, z + 1, x + 1, z, 0, 0, 1.6);
             continue;
         }
 
@@ -62,6 +79,12 @@ export function meshChunk(world, cx, cy, cz, tileIndex) {
                 const s3 = isSolid(world.get(q[0], q[1], q[2])) ? 1 : 0;
                 const o = (s1 && s2) ? 0 : 3 - s1 - s2 - s3;
                 ao.push(o);
+                // światło pochodni: średnia z pustych pól wokół narożnika
+                let suma = world.getLight(p[0], p[1], p[2]), ile = 1;
+                if (!(s1 && s2) && !s3) { suma += world.getLight(q[0], q[1], q[2]); ile++; }
+                if (!s1) { q[v] = c[v]; suma += world.getLight(q[0], q[1], q[2]); ile++; }
+                if (!s2) { q[u] = c[u]; q[v] = c[v] + sv; suma += world.getLight(q[0], q[1], q[2]); ile++; }
+                lit.push(jasnosc(suma / ile));
                 const b = light * (0.5 + o * 0.5 / 3);
                 col.push(b, b, b);
                 tex.push(a === 2 ? [du, dv] : [dv, du]);   // pion tekstury = pion świata
@@ -73,5 +96,5 @@ export function meshChunk(world, cx, cy, cz, tileIndex) {
             else for (let i = 5; i >= 0; i--) idx.push(base + order[i]);
         }
     }
-    return { pos, nor, uv, col, idx };
+    return { pos, nor, uv, col, lit, idx };
 }

@@ -1,5 +1,17 @@
 # Zmiany
 
+## 0.3.0
+
+- Kopalnia pamięta, co w niej zrobisz: wykopane bloki zostają po
+  ponownym uruchomieniu gry (do wylosowania nowej wyprawy).
+- Drabiny do stawiania przy ścianach - można wyjść z każdej dziury.
+- Pochodnie do stawiania na podłożu - ich światło rozlewa się po
+  korytarzach i zostaje w kopalni.
+- Pasek wyboru (kilof, drabina, pochodnia): klawisze 1-3, kółko myszy
+  albo dotknięcie; zapasy dokupuje się w sklepie.
+- Wykopanie ściany pod drabiną albo podłoża pod pochodnią oddaje je.
+- `docs/plan.md` - plan rozwoju gry.
+
 ## 0.2.0
 
 - Aplikacja na Windowsa z instalatorem (skrót na pulpicie, własne okno,

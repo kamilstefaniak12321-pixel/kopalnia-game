@@ -12,7 +12,10 @@ export class World {
     constructor(w, h, d) {
         this.w = w; this.h = h; this.d = d;
         this.data = new Uint8Array(w * h * d);
+        this.light = new Uint8Array(w * h * d);   // światło pochodni 0..14 (src/light.js)
     }
+    index(x, y, z) { return x + z * this.w + y * this.w * this.d; }
+    getLight(x, y, z) { return this.inside(x, y, z) ? this.light[this.index(x, y, z)] : 0; }
     inside(x, y, z) { return x >= 0 && y >= 0 && z >= 0 && x < this.w && y < this.h && z < this.d; }
     // Poza światem: po bokach i pod spodem lita skała, nad nim powietrze.
     get(x, y, z) {
@@ -170,4 +173,9 @@ export function generateMine(def, seed) {
         shaft: { x: cx, z: cz, bottomY },
         shop: { x: sx + 0.5, z: sz + 2 }
     };
+}
+
+// Zapisane zmiany gracza (wykopane i postawione bloki): { numer pola: blok }.
+export function applyChanges(world, zmiany) {
+    for (const [i, id] of Object.entries(zmiany)) if (i >= 0 && i < world.data.length && BLOCKS[id] !== undefined) world.data[i] = id;
 }
