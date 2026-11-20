@@ -29,12 +29,20 @@ export const LAMPY = [
 // Zapasy, które się zużywają: stawiane w kopalni drabiny i pochodnie.
 export const ZAPASY = {
     drabiny: { nazwa: 'Drabiny', opis: 'Stawiane przy ścianie — droga w górę z każdej dziury.', ile: 5, cena: 15 },
-    pochodnie: { nazwa: 'Pochodnie', opis: 'Stawiane na podłożu — światło, które zostaje w kopalni.', ile: 3, cena: 12 }
+    pochodnie: { nazwa: 'Pochodnie', opis: 'Stawiane na podłożu — światło, które zostaje w kopalni.', ile: 3, cena: 12 },
+    stemple: { nazwa: 'Stemple', opis: 'Stawiane pod kruchym stropem — podparta skała nie spadnie.', ile: 4, cena: 20 },
+    dynamit: { nazwa: 'Dynamit', opis: 'Wysadza każdą skałę w promieniu 2 bloków. Odejdź, zanim wybuchnie!', ile: 2, cena: 50 }
+};
+// Urządzenia szybu: kupowane raz, działają we wszystkich kopalniach.
+export const URZADZENIA = {
+    wozek: { nazwa: 'Wózek', opis: 'Przy szybie wyślesz urobek na powierzchnię i kopiesz dalej z pustym plecakiem.', cena: 400 },
+    winda: { nazwa: 'Winda', opis: 'Przy szybie zjedziesz od razu na wybrany poziom i wrócisz na górę.', cena: 800 }
 };
 const LISTY = { kilof: KILOFY, plecak: PLECAKI, lampa: LAMPY };
 
 export function nowyStan() {
-    return { kasa: 0, kilof: 0, plecak: 0, lampa: 0, kopalnie: [0], kopalnia: 0, ziarno: 1, przedmioty: {}, drabiny: 8, pochodnie: 4, paliwo: LAMPY[0].paliwo };
+    return { kasa: 0, kilof: 0, plecak: 0, lampa: 0, kopalnie: [0], kopalnia: 0, ziarno: 1, przedmioty: {}, drabiny: 8, pochodnie: 4, paliwo: LAMPY[0].paliwo,
+        stemple: 3, dynamit: 1, winda: false, wozek: false, sklad: {} };
 }
 
 export function ileWPlecaku(s) { return Object.values(s.przedmioty).reduce((a, b) => a + b, 0); }
@@ -51,13 +59,27 @@ export function dodajUrobek(s, id) {
     s.przedmioty[id] = (s.przedmioty[id] || 0) + 1;
     return true;
 }
-export function wartoscUrobku(s) {
-    return Object.entries(s.przedmioty).reduce((a, [id, n]) => a + BLOCKS[id].wartosc * n, 0);
-}
+const wartosc = lista => Object.entries(lista || {}).reduce((a, [id, n]) => a + BLOCKS[id].wartosc * n, 0);
+// Do sprzedania: to, co w plecaku, i to, co wózek wywiózł na górę.
+export function wartoscUrobku(s) { return wartosc(s.przedmioty) + wartosc(s.sklad); }
 export function sprzedajWszystko(s) {
     const zysk = wartoscUrobku(s);
-    s.kasa += zysk; s.przedmioty = {};
+    s.kasa += zysk; s.przedmioty = {}; s.sklad = {};
     return zysk;
+}
+// Wózek: cały plecak jedzie na powierzchnię (zwraca liczbę sztuk).
+export function wyslijUrobek(s) {
+    let ile = 0;
+    s.sklad ||= {};
+    for (const [id, n] of Object.entries(s.przedmioty)) { s.sklad[id] = (s.sklad[id] || 0) + n; ile += n; }
+    s.przedmioty = {};
+    return ile;
+}
+export function kupUrzadzenie(s, rodzaj) {
+    const u = URZADZENIA[rodzaj];
+    if (!u || s[rodzaj] || s.kasa < u.cena) return false;
+    s.kasa -= u.cena; s[rodzaj] = true;
+    return true;
 }
 
 // Następny stopień ulepszenia (albo null, gdy to już najlepszy).

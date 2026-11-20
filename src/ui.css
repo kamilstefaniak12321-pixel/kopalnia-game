@@ -73,6 +73,7 @@ body.dotyk #hud { left: calc(12px + env(safe-area-inset-left)); }
 .pasek.malo i { background: #e2542c; }
 #oddech { position: fixed; top: calc(50% + 40px); left: 50%; margin-left: -47px; display: none; }
 #oddech i { background: #6fc3ff; }
-#podwoda, #zaciemnienie { position: fixed; inset: 0; pointer-events: none; opacity: 0; }
+#podwoda, #zaciemnienie, #blysk { position: fixed; inset: 0; pointer-events: none; opacity: 0; }
 #podwoda { background: #0b4a8a55; transition: opacity .2s; }
 #zaciemnienie { background: #000; }
+#blysk { background: #fff3c4; }

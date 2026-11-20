@@ -13,7 +13,7 @@ export const AIR = 0, GRASS = 1, DIRT = 2, STONE = 3, SLATE = 4, BASALT = 5,
     SILVER = 12, GOLD = 13, EMERALD = 14, RUBY = 15, DIAMOND = 16,
     // Drabiny stawiane przez gracza: przy ścianie -x, +x, -z, +z.
     LADDER_W = 17, LADDER_E = 18, LADDER_N = 19, LADDER_S = 20, TORCH = 21,
-    UNSTABLE = 22, RUBBLE = 23, WATER = 24;
+    UNSTABLE = 22, RUBBLE = 23, WATER = 24, PROP = 25, DYNAMITE = 26;
 
 function blok(nazwa, twardosc, poziom, wartosc, tekstury, extra = {}) {
     const t = typeof tekstury === 'string' ? [tekstury, tekstury, tekstury] : tekstury;
@@ -47,6 +47,12 @@ BLOCKS[UNSTABLE] = blok('Krucha skała', 0.9, 0, 0, 'krucha');
 BLOCKS[RUBBLE] = blok('Rumosz', 0.6, 0, 0, 'rumosz');
 BLOCKS[WATER] = blok('Woda', 1, 99, 0, 'kamien', { staly: true });
 
+// Stempel podpiera kruchy strop (pole pod skałą nie jest już puste).
+BLOCKS[PROP] = blok('Stempel', 1, 99, 0, 'stempel', { staly: true });
+BLOCKS[DYNAMITE] = blok('Dynamit', 1, 99, 0, 'dynamit', { staly: true });
+// Cienkie rzeczy stojące w polu: gracz przez nie przechodzi.
+export function isThin(id) { return id === TORCH || id === PROP || id === DYNAMITE; }
+
 // Kierunek ściany, o którą opiera się drabina: [dx, dz].
 export const WALLS = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 export const PLACED_LADDERS = [LADDER_W, LADDER_E, LADDER_N, LADDER_S];
@@ -55,7 +61,7 @@ export function ladderWall(id) { return id === LADDER ? 0 : id >= LADDER_W && id
 export function isLadder(id) { return ladderWall(id) >= 0; }
 
 // Drabiny i pochodnie nie zatrzymują gracza i widać przez nie ściany.
-export function isSolid(id) { return id !== AIR && id !== TORCH && id !== WATER && ladderWall(id) < 0; }
+export function isSolid(id) { return id !== AIR && id !== WATER && !isThin(id) && ladderWall(id) < 0; }
 // Pola, przez które coś może spaść albo przepłynąć.
 export function isOpen(id) { return id === AIR || id === WATER; }
 

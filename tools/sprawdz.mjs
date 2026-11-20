@@ -77,7 +77,7 @@ test('tekstury: 64x64, nieprzezroczyste (poza drabiną), kafelkują się', () =>
         assert.equal(t.length, 64 * 64 * 4);
         let pelne = 0;
         for (let i = 3; i < t.length; i += 4) if (t[i] === 255) pelne++;
-        if (n === 'drabina' || n === 'pochodnia') assert.ok(pelne > 300 && pelne < 3000);
+        if (['drabina', 'pochodnia', 'stempel', 'dynamit'].includes(n)) assert.ok(pelne > 300 && pelne < 3000);
         else assert.equal(pelne, 64 * 64, n);
     }
     for (const b of BLOCKS) if (b) for (const t of b.tekstury) assert.ok(t in TILE_INDEX, t);
@@ -228,7 +228,9 @@ import { World } from '../src/mine.js';
         const m = generateMine(def, 21), g = m.world;
         let krucha = 0, woda = 0;
         for (const b of g.data) { if (b === UNSTABLE) krucha++; if (b === WATER) woda++; }
-        assert.ok(krucha > 20 && woda > 50 && m.zbiorniki.length >= 2, def.nazwa);
+        assert.ok(krucha > 20 && woda > 50, def.nazwa);
+        if (!def.charakter) assert.ok(m.zbiorniki.length >= 2, def.nazwa);
+        assert.ok(m.poziomy.length >= 3 && m.poziomy.every(y => g.get(m.shaft.x, y, m.shaft.z) === LADDER), 'poziomy windy są na drabinie szybu');
         for (const [x, y, z] of m.zbiorniki) {
             assert.equal(g.get(x, y, z), WATER);
             assert.deepEqual(settleWater(g, g.index(x, y, z)), { remove: [], add: [] }, 'zbiornik stoi: ' + def.nazwa);
@@ -253,6 +255,54 @@ import { World } from '../src/mine.js';
     assert.deepEqual(s.przedmioty, { [COAL]: 4, [DIAMOND]: 1 });
     assert.ok(isOpen(WATER) && isOpen(AIR) && !isOpen(RUBBLE) && !isSolid(WATER));
     ok++; console.log('  ok  zawały, woda, lampa, omdlenie');
+}
+
+// --- Stemple, dynamit, wózek, winda, charakter kopalni ---
+import { blast, BLAST_RADIUS } from '../src/blast.js';
+import { PROP, DYNAMITE, BEDROCK, GOLD, isThin } from '../src/blocks.js';
+import { charakter } from '../src/mines.js';
+{
+    // Stempel pod wiszącą kruchą skałą: przestaje wisieć.
+    const w = new World(12, 12, 12); w.data.fill(STONE);
+    w.set(5, 5, 5, UNSTABLE); w.set(5, 4, 5, AIR); w.set(5, 3, 5, AIR);
+    assert.ok(isHanging(w, 5, 5, 5));
+    w.set(5, 3, 5, PROP); assert.ok(isHanging(w, 5, 5, 5), 'stempel za niski - strop dalej wisi');
+    w.set(5, 4, 5, PROP); assert.ok(!isHanging(w, 5, 5, 5) && shaken(w, 5, 4, 6).length === 0, 'podparty strop się trzyma');
+    assert.ok(isThin(PROP) && isThin(DYNAMITE) && !isSolid(PROP) && !isOpen(PROP));
+
+    // Wybuch: kruszy skałę (także za twardą na kilof), zostawia litą skałę
+    // i za twarde rudy, zbiera rudy na miarę kilofa.
+    const b = new World(16, 16, 16); b.data.fill(SLATE);
+    b.set(8, 8, 8, DYNAMITE); b.set(9, 8, 8, COAL); b.set(8, 9, 8, GOLD); b.set(7, 8, 8, BEDROCK); b.set(8, 8, 10, DYNAMITE); b.set(8, 8, 12, COAL);
+    const s = eko.nowyStan();
+    const plan = blast(b, 8, 8, 8, id => eko.mozeKopac(s, id), id => eko.dodajUrobek(s, id));
+    for (const [x, y, z, id] of plan.usun) b.set(x, y, z, id);
+    assert.equal(b.get(8, 8, 8), AIR); assert.equal(b.get(8, 7, 8), AIR, 'łupek skruszony mimo drewnianego kilofa');
+    assert.equal(b.get(9, 8, 8), AIR); assert.deepEqual(s.przedmioty, { [COAL]: 1 }, 'węgiel zebrany');
+    assert.equal(b.get(8, 9, 8), GOLD, 'złoto za twarde - zostaje'); assert.equal(b.get(7, 8, 8), BEDROCK);
+    assert.equal(b.get(8, 8, 12), COAL, 'poza zasięgiem'); assert.ok(BLAST_RADIUS < 4);
+    assert.deepEqual(plan.lancuch, [[8, 8, 10]], 'drugi dynamit odpali się łańcuchowo');
+    assert.equal(b.get(8, 8, 10), DYNAMITE);
+
+    // Wózek i urządzenia.
+    const g = eko.nowyStan(); g.przedmioty = { [COAL]: 6 }; g.kasa = 500;
+    assert.ok(eko.kupUrzadzenie(g, 'wozek') && !eko.kupUrzadzenie(g, 'wozek') && !eko.kupUrzadzenie(g, 'winda'));
+    assert.equal(eko.wyslijUrobek(g), 6); assert.equal(eko.ileWPlecaku(g), 0);
+    g.przedmioty = { [COAL]: 4 }; assert.equal(eko.zgubPoloweUrobku(g), 2);
+    assert.equal(eko.wartoscUrobku(g), 8 * 5, 'wózek chroni wywieziony urobek');
+    assert.equal(eko.sprzedajWszystko(g), 40); assert.deepEqual(g.sklad, {});
+    assert.ok(eko.kupZapas(g, 'stemple') && g.stemple === 7 && eko.kupZapas(g, 'dynamit') && g.dynamit === 3);
+
+    // Charakter kopalni: Mokra ma zalane dno, Kruchy Uskok dużo kruchej skały.
+    const licz = (def, blok) => { let n = 0; for (const v of generateMine(def, 4).world.data) if (v === blok) n++; return n; };
+    const [stara, , , mokra, kruchy] = MINES;
+    assert.ok(charakter(mokra).zalane > 0 && licz(mokra, WATER) > 4 * licz(stara, WATER));
+    assert.ok(licz(kruchy, UNSTABLE) > 3 * licz(MINES[1], UNSTABLE));
+    const m = generateMine(mokra, 4);
+    assert.equal(m.world.get(m.shaft.x + 1, m.shaft.bottomY, m.shaft.z + 1), WATER, 'dno szybu Mokrej Sztolni pod wodą');
+    assert.deepEqual(settleWater(m.world, m.world.index(m.shaft.x + 1, m.shaft.bottomY, m.shaft.z + 1)), { remove: [], add: [] }, 'zalane dno stoi spokojnie');
+    assert.equal(MINES.slice(0, 3).map(d => d.nazwa).join(), 'Stara Sztolnia,Srebrny Szyb,Głębia Kryształów', 'stare numery kopalni bez zmian');
+    ok++; console.log('  ok  stemple, dynamit, wózek, winda, charakter kopalni');
 }
 
 // --- Wersja i pliki aplikacji ---

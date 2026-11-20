@@ -3,12 +3,13 @@
 // ------------------------------------------------------------
 import * as THREE from '../lib/three/three.module.js';
 import { CHUNK, TILE, ATLAS_TILES, REACH, SAVE_KEY, VERSION, EYE_HEIGHT } from './config.js';
-import { AIR, TORCH, UNSTABLE, RUBBLE, WATER, BLOCKS, WALLS, PLACED_LADDERS, isOpen } from './blocks.js';
-import { MINES } from './mines.js';
+import { AIR, TORCH, RUBBLE, WATER, PROP, DYNAMITE, BLOCKS, WALLS, PLACED_LADDERS, isOpen, isThin } from './blocks.js';
+import { MINES, charakter } from './mines.js';
 import { generateMine, applyChanges } from './mine.js';
 import { computeLight } from './light.js';
 import { shaken, pulled, landingY, isHanging } from './cavein.js';
 import { findWater, settleWater } from './water.js';
+import { blast, BLAST_DANGER, BLAST_SHAKE } from './blast.js';
 import { meshChunk } from './mesher.js';
 import { TILE_NAMES, TILE_INDEX, makeTile, makeCrack } from './textures.js';
 import { Player, raycast } from './player.js';
@@ -164,7 +165,7 @@ function naPowierzchnie() {
 
 function wczytajKopalnie() {
     for (const mapa of [chunks, chunksWody]) { for (const m of mapa.values()) { scene.remove(m); m.geometry.dispose(); } mapa.clear(); }
-    spadki.length = 0; przeplyw = null; oddech = 1;
+    spadki.length = 0; przeplyw = null; oddech = 1; lonty.length = 0;
     for (const l of lecace) scene.remove(l.mesh);
     lecace.length = 0;
     kopalnia = generateMine(MINES[stan.kopalnia], stan.ziarno);
@@ -178,6 +179,9 @@ function wczytajKopalnie() {
     } catch { /* brak zapisu świata */ }
     applyChanges(world, zmiany);
     pochodnie = computeLight(world);
+    // Dynamit postawiony przed wyjściem z gry odpala się po powrocie.
+    for (let i = 0; i < world.data.length; i++) if (world.data[i] === DYNAMITE)
+        uzbroj(i % world.w, Math.floor(i / (world.w * world.d)), Math.floor(i / world.w) % world.d, LONT + 4);
     for (let cy = 0; cy < world.h / CHUNK; cy++) for (let cz = 0; cz < world.d / CHUNK; cz++) for (let cx = 0; cx < world.w / CHUNK; cx++)
         rebuildChunk(cx, cy, cz);
     player = new Player(world);
@@ -226,8 +230,16 @@ function stuk(wysokosc = 1, glosnosc = 0.25, dlugosc = 0.07) {
 }
 
 // ---------- HUD i komunikaty ----------
-let wybrany = 0;   // 0 - kilof, 1 - drabina, 2 - pochodnia
-function wybierz(i) { wybrany = (i + 3) % 3; myszWcisnieta = false; odswiezHud(); }
+// Pasek wyboru: kilof i rzeczy do stawiania (zapas = pole w stanie gry).
+const PASEK = [
+    { nazwa: 'Kilof' },
+    { nazwa: 'Drabina', zapas: 'drabiny', ikona: 'drabina', brak: 'Nie masz drabin' },
+    { nazwa: 'Pochodnia', zapas: 'pochodnie', ikona: 'pochodnia', blok: TORCH, brak: 'Nie masz pochodni' },
+    { nazwa: 'Stempel', zapas: 'stemple', ikona: 'stempel', blok: PROP, brak: 'Nie masz stempli' },
+    { nazwa: 'Dynamit', zapas: 'dynamit', ikona: 'dynamit', blok: DYNAMITE, brak: 'Nie masz dynamitu' }
+];
+let wybrany = 0;
+function wybierz(i) { wybrany = (i + PASEK.length) % PASEK.length; myszWcisnieta = false; odswiezHud(); }
 let komunikatDo = 0, waznyDo = 0;
 function komunikat(tekst, czas = 1800) {
     if (performance.now() < waznyDo && czas <= 1800) return;      // nie zasłaniaj ważnej wiadomości
@@ -240,8 +252,8 @@ function odswiezHud() {
     $('plecak').textContent = `Plecak: ${eko.ileWPlecaku(stan)}/${eko.pojemnosc(stan)}`;
     $('lampa-nazwa').textContent = eko.LAMPY[stan.lampa].nazwa;
     $('kilof').textContent = eko.KILOFY[stan.kilof].nazwa;
-    $('pasek').innerHTML = [['⛏', ''], [`<img src="${ikony.drabina}">`, stan.drabiny], [`<img src="${ikony.pochodnia}">`, stan.pochodnie]]
-        .map(([ikona, ile], i) => `<div data-slot="${i}" class="${i === wybrany ? 'wybrany' : ''}">${ikona}<b>${ile}</b><i>${i + 1}</i></div>`).join('');
+    $('pasek').innerHTML = PASEK.map((p, i) => `<div data-slot="${i}" class="${i === wybrany ? 'wybrany' : ''}">${p.zapas
+        ? `<img src="${ikony[p.ikona]}"><b>${stan[p.zapas] || 0}</b>` : '⛏'}<i>${i + 1}</i></div>`).join('');
     $('urobek').innerHTML = Object.entries(stan.przedmioty)
         .map(([id, n]) => `<div><img src="${ikonaBloku(id)}">${n}</div>`).join('');
 }
@@ -256,7 +268,7 @@ function rysujSklep() {
         return `<div class="wiersz"><div>${tytul}: <b>${teraz.nazwa}</b><small>${n ? 'Następny: ' + n.nazwa + ' — ' + opis(n) : 'Najlepszy możliwy'}</small></div>
             ${n ? `<button data-kup="${rodzaj}" ${stan.kasa < n.cena ? 'disabled' : ''}>Kup za ${n.cena}</button>` : ''}</div>`;
     };
-    const kopalnie = MINES.map((m, i) => {
+    const kopalnie = MINES.map((m, i) => [m, i]).sort((a, b) => a[0].cena - b[0].cena).map(([m, i]) => {
         const mam = stan.kopalnie.includes(i);
         const przycisk = i === stan.kopalnia ? '<button disabled>Jesteś tutaj</button>'
             : mam ? `<button data-idz="${i}">Jedź</button>`
@@ -267,6 +279,8 @@ function rysujSklep() {
         <h2>Urobek</h2>
         <div class="lista-urobku">${Object.entries(stan.przedmioty).map(([id, n]) =>
             `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('') || 'Plecak jest pusty.'}</div>
+        ${Object.keys(stan.sklad || {}).length ? `<p>Wózek wywiózł na górę:</p><div class="lista-urobku">${Object.entries(stan.sklad).map(([id, n]) =>
+            `<div><img src="${ikonaBloku(id)}">${BLOCKS[id].nazwa}<br>${n} × ${BLOCKS[id].wartosc}</div>`).join('')}</div>` : ''}
         <div class="wiersz"><div></div><button data-sprzedaj ${wart ? '' : 'disabled'}>Sprzedaj wszystko (+${wart})</button></div>
         <h2>Wyposażenie</h2>
         ${ulepszenie('kilof', 'Kilof', n => 'kopie ' + n.szybkosc + '× szybciej, rusza twardsze skały')}
@@ -275,10 +289,43 @@ function rysujSklep() {
         <h2>Zapasy</h2>
         ${Object.entries(eko.ZAPASY).map(([k, z]) => `<div class="wiersz"><div>${z.nazwa}: <b>${stan[k]}</b><small>${z.opis}</small></div>
             <button data-zapas="${k}" ${stan.kasa < z.cena ? 'disabled' : ''}>+${z.ile} za ${z.cena}</button></div>`).join('')}
+        <h2>Urządzenia szybu</h2>
+        ${Object.entries(eko.URZADZENIA).map(([k, u]) => `<div class="wiersz"><div><b>${u.nazwa}</b><small>${u.opis}</small></div>
+            ${stan[k] ? '<button disabled>Kupione</button>' : `<button data-urzadzenie="${k}" ${stan.kasa < u.cena ? 'disabled' : ''}>Kup za ${u.cena}</button>`}</div>`).join('')}
         <h2>Kopalnie</h2>${kopalnie}
         <div class="wiersz"><div>Nowa wyprawa<small>Ta sama kopalnia z nowym układem chodników. Obecna przepada razem z tym, co w niej zostawisz.</small></div><button data-nowa>Wylosuj</button></div>
         <p><button data-zamknij>${DOTYK ? 'Wróć do gry' : 'Wróć do gry (E)'}</button></p>`;
 }
+// ---------- Szyb: winda i wózek ----------
+function przySzybie() {
+    return Math.hypot(player.pos.x - kopalnia.shaft.x - 1, player.pos.z - kopalnia.shaft.z - 1) < 3.4;
+}
+function otworzSzyb() {
+    sklepOtwarty = true; myszWcisnieta = false; $('dotyk').classList.remove('widoczne'); document.exitPointerLock?.();
+    const tu = player.pos.y;
+    const przystanki = [['Powierzchnia', kopalnia.groundY + 1], ...kopalnia.poziomy.map((y, i) => [`Poziom ${i + 1} — ${kopalnia.groundY - y} m`, y])];
+    $('sklep').hidden = false;
+    $('sklep').innerHTML = `<h1>Szyb</h1>
+        ${stan.wozek ? `<h2>Wózek</h2><div class="wiersz"><div>W plecaku: <b>${eko.ileWPlecaku(stan)}</b> szt.<small>Urobek pojedzie na powierzchnię i poczeka na sprzedaż w skupie.</small></div>
+            <button data-wozek ${eko.ileWPlecaku(stan) ? '' : 'disabled'}>Wyślij na górę</button></div>` : ''}
+        ${stan.winda ? `<h2>Winda</h2>${przystanki.map(([nazwa, y], i) => `<div class="wiersz"><div>${nazwa}</div>
+            <button data-poziom="${i}" ${Math.abs(tu - y) < 1.5 ? 'disabled' : ''}>${Math.abs(tu - y) < 1.5 ? 'Jesteś tutaj' : 'Jedź'}</button></div>`).join('')}` : ''}
+        <p><button data-zamknij>${DOTYK ? 'Wróć do gry' : 'Wróć do gry (E)'}</button></p>`;
+}
+function jedzWinda(i) {
+    if (i === 0) naPowierzchnie();
+    else {
+        // Wysiadka na drabinie szybu, na wysokości poziomu.
+        const y = kopalnia.poziomy[i - 1];
+        Object.assign(player.pos, { x: kopalnia.shaft.x + 0.5, y, z: kopalnia.shaft.z + 0.5 });
+        player.vel.x = player.vel.y = player.vel.z = 0;
+    }
+    const z = $('zaciemnienie');
+    z.style.transition = 'none'; z.style.opacity = 1;
+    requestAnimationFrame(() => requestAnimationFrame(() => { z.style.transition = 'opacity .8s'; z.style.opacity = 0; }));
+    stuk(0.4, 0.3, 0.5);
+}
+
 function otworzSklep() { sklepOtwarty = true; myszWcisnieta = false; $('dotyk').classList.remove('widoczne'); $('sklep').hidden = false; rysujSklep(); document.exitPointerLock?.(); }
 function zamknijSklep() { sklepOtwarty = false; $('sklep').hidden = true; zlapMysz(); }
 function zmienKopalnie(i, noweZiarno) {
@@ -292,6 +339,9 @@ $('sklep').addEventListener('click', e => {
     if ('sprzedaj' in d) { const z = eko.sprzedajWszystko(stan); stuk(2.2); komunikat('Sprzedano za ' + z + ' monet'); }
     else if (d.kup) { if (eko.kupUlepszenie(stan, d.kup)) stuk(1.6); }
     else if (d.zapas) { if (eko.kupZapas(stan, d.zapas)) stuk(1.6); }
+    else if (d.urzadzenie) { if (eko.kupUrzadzenie(stan, d.urzadzenie)) stuk(1.6); }
+    else if ('wozek' in d) { const n = eko.wyslijUrobek(stan); stuk(1.8); komunikat(`Wózek zabrał ${n} szt. urobku na powierzchnię`, 3000); zapisz(); odswiezHud(); return zamknijSklep(); }
+    else if (d.poziom) { jedzWinda(+d.poziom); return zamknijSklep(); }
     else if (d.kopalnia) { if (eko.kupKopalnie(stan, +d.kopalnia)) zmienKopalnie(+d.kopalnia, true); }
     else if (d.idz) zmienKopalnie(+d.idz, true);
     else if ('nowa' in d) zmienKopalnie(stan.kopalnia, true);
@@ -325,6 +375,13 @@ document.addEventListener('mousedown', e => {
 document.addEventListener('wheel', e => { if (document.pointerLockElement) wybierz(wybrany + Math.sign(e.deltaY)); });
 document.addEventListener('mouseup', e => { if (e.button === 0) myszWcisnieta = false; });
 
+// E (albo przycisk na telefonie): skup przy budce, szyb przy szybie.
+const maSzyb = () => (stan.winda || stan.wozek) && przySzybie();
+function akcjaE() {
+    if (przySklepie()) otworzSklep();
+    else if (maSzyb()) otworzSzyb();
+    else komunikat(przySzybie() ? 'Windę i wózek kupisz w sklepie' : 'Skup jest w budce na powierzchni');
+}
 const komendaOtwarta = () => $('komenda').style.display === 'block';
 function przySklepie() {
     return player.pos.y > kopalnia.groundY + 0.5
@@ -340,9 +397,9 @@ document.addEventListener('keydown', e => {
     if (!gra || sklepOtwarty) return;
     if (['Space', 'Tab'].includes(e.code)) e.preventDefault();
     klawisze.add(e.code);
-    if (e.code === 'KeyE') { if (przySklepie()) otworzSklep(); else komunikat('Skup jest w budce na powierzchni'); }
+    if (e.code === 'KeyE') akcjaE();
     if (e.code === 'Escape' && bezMyszy) { gra = false; $('start').hidden = false; $('graj').textContent = 'Wróć do gry'; }
-    if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) wybierz(+e.code.slice(5) - 1);
+    if (/^Digit[1-5]$/.test(e.code)) wybierz(+e.code.slice(5) - 1);
     if (e.code === 'KeyT') {
         e.preventDefault(); klawisze.clear(); document.exitPointerLock?.();
         $('komenda').style.display = 'block'; $('komenda').focus();
@@ -400,7 +457,7 @@ if (DOTYK) {
     trzymany('d-skok', v => { palce.skok = v; });
     trzymany('d-dol', v => { palce.dol = v; });
     trzymany('d-lina', v => { palce.lina = v; });
-    $('d-sklep').addEventListener('click', () => { if (przySklepie()) otworzSklep(); });
+    $('d-sklep').addEventListener('click', akcjaE);
     document.addEventListener('contextmenu', e => e.preventDefault());
 }
 // Telefon chowa aplikację albo kartę - zapisz postęp od razu.
@@ -419,11 +476,15 @@ function wykonajKomende(tekst) {
     else if (nazwa === 'paliwo' && n >= 0) { stan.paliwo = eko.LAMPY[stan.lampa].paliwo * Math.min(100, n) / 100; lampaOstrzezenie = 0; }
     else if (nazwa === 'drabiny' && n >= 0) stan.drabiny = n;
     else if (nazwa === 'pochodnie' && n >= 0) stan.pochodnie = n;
+    else if (nazwa === 'stemple' && n >= 0) stan.stemple = n;
+    else if (nazwa === 'dynamit' && n >= 0) stan.dynamit = n;
+    else if (nazwa === 'winda') stan.winda = true;
+    else if (nazwa === 'wozek') stan.wozek = true;
     else if (nazwa === 'gora') naPowierzchnie();
     else if (nazwa === 'dol') { player.pos.x = kopalnia.shaft.x + 1.5; player.pos.z = kopalnia.shaft.z + 1.5; player.pos.y = kopalnia.shaft.bottomY; }
     else if (nazwa === 'kopalnia' && MINES[n]) { if (!stan.kopalnie.includes(n)) stan.kopalnie.push(n); zmienKopalnie(n, true); }
     else if (nazwa === 'reset') { stan = { ...eko.nowyStan(), ziarno: Math.floor(Math.random() * 1e9) }; wczytajKopalnie(); }
-    else return komunikat('Komendy: kasa N, kilof 0-5, plecak 0-3, lampa 0-3, paliwo 0-100, drabiny N, pochodnie N, kopalnia 0-2, gora, dol, reset');
+    else return komunikat('Komendy: kasa N, kilof 0-5, plecak 0-3, lampa 0-3, paliwo 0-100, drabiny N, pochodnie N, stemple N, dynamit N, winda, wozek, kopalnia 0-4, gora, dol, reset');
     komunikat('OK: ' + tekst); zapisz(); odswiezHud();
 }
 
@@ -527,14 +588,16 @@ function woda(dt) {
 // ---------- Stawianie drabin i pochodni ----------
 function postaw() {
     if (!gra || sklepOtwarty || wybrany === 0) return;
-    const co = wybrany === 1 ? 'drabiny' : 'pochodnie';
-    if (!(stan[co] > 0)) return komunikat(wybrany === 1 ? 'Nie masz drabin — kup je w sklepie' : 'Nie masz pochodni — kup je w sklepie');
+    const rzecz = PASEK[wybrany];
+    if (!(stan[rzecz.zapas] > 0)) return komunikat(rzecz.brak + ' — kup w sklepie');
     const hit = raycast(world, player.eye(), player.dir(), REACH);
     if (!hit || (!hit.nx && !hit.ny && !hit.nz)) return;
-    const x = hit.x + hit.nx, y = hit.y + hit.ny, z = hit.z + hit.nz;
+    let x = hit.x + hit.nx, y = hit.y + hit.ny, z = hit.z + hit.nz;
+    // Stempel można dostawić na stemplu - szukamy wolnego pola nad nim.
+    if (rzecz.blok === PROP) while (world.get(x, y, z) === PROP) y++;
     if (world.get(x, y, z) !== AIR || !world.inside(x, y, z)) return komunikat('To miejsce jest zajęte');
-    let id = TORCH;
-    if (wybrany === 1) {
+    let id = rzecz.blok;
+    if (!id) {
         // Drabina opiera się o wskazaną ścianę; wskazując podłogę albo
         // sufit - o ścianę, w którą patrzysz.
         let sciana = -1;
@@ -546,10 +609,61 @@ function postaw() {
         }
         if (sciana < 0) return komunikat('Drabina musi przylegać do ściany');
         id = PLACED_LADDERS[sciana];
-    } else if (!world.solid(x, y - 1, z)) return komunikat('Pochodnię stawia się na podłożu');
-    stan[co]--;
+    } else if (!maOparcie(id, x, y, z)) return komunikat(rzecz.nazwa + ': potrzebne twarde podłoże');
+    stan[rzecz.zapas]--;
     zmienBlok(x, y, z, id);
+    if (id === DYNAMITE) { uzbroj(x, y, z, LONT); komunikat('Lont zapalony — uciekaj!', 2500); }
     stuk(1.4, 0.3); odswiezHud(); zapisz();
+}
+
+// Pochodnia, stempel i dynamit stoją na twardym bloku (stempel także
+// na innym stemplu). Gdy oparcie zniknie, rzecz wraca do zapasów.
+function maOparcie(id, x, y, z) {
+    return world.solid(x, y - 1, z) || (id === PROP && world.get(x, y - 1, z) === PROP);
+}
+const ZAPAS_BLOKU = { [TORCH]: 'pochodnie', [PROP]: 'stemple', [DYNAMITE]: 'dynamit' };
+function sprzatnijOsierocone(cx, cy, cz, r) {
+    for (let runda = 0; runda < 12; runda++) {
+        const lista = [];
+        for (let y = cy - r; y <= cy + r + runda; y++) for (let z = cz - r; z <= cz + r; z++) for (let x = cx - r; x <= cx + r; x++) {
+            const id = world.get(x, y, z), o = PLACED_LADDERS.indexOf(id);
+            if (isThin(id) && !maOparcie(id, x, y, z)) { lista.push([x, y, z, AIR]); stan[ZAPAS_BLOKU[id]]++; }
+            else if (o >= 0 && !world.solid(x + WALLS[o][0], y, z + WALLS[o][1])) { lista.push([x, y, z, AIR]); stan.drabiny++; }
+        }
+        if (!lista.length) break;
+        zmienBloki(lista);
+    }
+}
+
+// ---------- Dynamit ----------
+const LONT = 3.5;           // sekundy od postawienia do wybuchu
+const lonty = [];
+function uzbroj(x, y, z, t) { if (!lonty.some(l => l.x === x && l.y === y && l.z === z)) lonty.push({ x, y, z, t, tik: 0 }); }
+function wybuch(x, y, z) {
+    const plan = blast(world, x, y, z, id => eko.mozeKopac(stan, id), id => eko.dodajUrobek(stan, id));
+    zmienBloki(plan.usun);
+    for (const [a, b, c] of plan.lancuch) uzbroj(a, b, c, 0.2);
+    sprzatnijOsierocone(x, y, z, 4);
+    // Wstrząs zrywa kruche stropy w szerokim promieniu.
+    for (let dy = -BLAST_SHAKE; dy <= BLAST_SHAKE; dy++) for (let dz = -BLAST_SHAKE; dz <= BLAST_SHAKE; dz++) for (let dx = -BLAST_SHAKE; dx <= BLAST_SHAKE; dx++)
+        if (isHanging(world, x + dx, y + dy, z + dz)) zaplanujSpadek(x + dx, y + dy, z + dz, 0.3 + Math.random() * 0.7);
+    sprawdzWode(x, y, z);
+    stuk(0.08, 0.9, 1.1); stuk(0.3, 0.6, 0.4); wstrzas = 2;
+    const b = $('blysk'); b.style.transition = 'none'; b.style.opacity = 0.8;
+    requestAnimationFrame(() => requestAnimationFrame(() => { b.style.transition = 'opacity .6s'; b.style.opacity = 0; }));
+    const p = player.pos;
+    if (Math.hypot(p.x - x - 0.5, p.y + 0.9 - y - 0.5, p.z - z - 0.5) < BLAST_DANGER) omdlenie('Wybuch był za blisko.');
+    odswiezHud(); zapisz();
+}
+function dynamit(dt) {
+    for (let i = lonty.length - 1; i >= 0; i--) {
+        const l = lonty[i];
+        l.t -= dt;
+        if ((l.tik += dt) > 0.35) { l.tik = 0; stuk(3, 0.12, 0.03); }       // syk lontu
+        if (l.t > 0) continue;
+        lonty.splice(i, 1);
+        if (world.get(l.x, l.y, l.z) === DYNAMITE) wybuch(l.x, l.y, l.z);
+    }
 }
 
 // ---------- Kopanie ----------
@@ -572,11 +686,7 @@ function kopanie(dt) {
             postep += dt / eko.czasKopania(stan, hit.id);
             if (postep >= 1) {
                 zmienBlok(hit.x, hit.y, hit.z, AIR);
-                // Pochodnia i drabiny tracą oparcie - wracają do zapasów.
-                if (world.get(hit.x, hit.y + 1, hit.z) === TORCH) { zmienBlok(hit.x, hit.y + 1, hit.z, AIR); stan.pochodnie++; }
-                WALLS.forEach(([dx, dz], o) => {
-                    if (world.get(hit.x - dx, hit.y, hit.z - dz) === PLACED_LADDERS[o]) { zmienBlok(hit.x - dx, hit.y, hit.z - dz, AIR); stan.drabiny++; }
-                });
+                sprzatnijOsierocone(hit.x, hit.y, hit.z, 1);
                 poWstrzasie(hit.x, hit.y, hit.z);
                 sprawdzWode(hit.x, hit.y, hit.z);
                 if (eko.dodajUrobek(stan, hit.id)) { komunikat('+1 ' + b.nazwa); zapisz(); }
@@ -618,6 +728,7 @@ function klatka(dt) {
         });
         kopanie(dt);
         zawaly(dt);
+        dynamit(dt);
         podWoda = woda(dt);
 
         // Lina ratunkowa: przytrzymaj R.
@@ -643,7 +754,7 @@ function klatka(dt) {
     else if (paliwo > 0 && paliwo < 0.2 && lampaOstrzezenie < 1) { lampaOstrzezenie = 1; komunikat('Lampa przygasa — kończy się paliwo.', 4000); }
     const moc = paliwo <= 0 ? 0.12 : paliwo < 0.2 ? 0.7 + 0.3 * Math.sin(performance.now() / 70) * Math.sin(performance.now() / 23) : 1;
     const zasieg = eko.LAMPY[stan.lampa].zasieg * (paliwo <= 0 ? 0.4 : 1);
-    scene.background.copy(NIEBO).lerp(CIEMNOSC, pod);
+    scene.background.copy(NIEBO).lerp(CIEMNOSC.setHex(charakter(MINES[stan.kopalnia]).mgla), pod);
     if (podWoda) scene.background.lerp(GLEBINA, 0.85);
     scene.fog.color.copy(scene.background);
     scene.fog.near = podWoda ? 0.3 : 2 + (1 - pod) * 30;
@@ -662,9 +773,9 @@ function klatka(dt) {
     const glebokosc = Math.max(0, Math.floor(kopalnia.groundY + 1 - player.pos.y));
     $('glebokosc').textContent = glebokosc > 0 ? `Głębokość: ${glebokosc} m` : MINES[stan.kopalnia].nazwa + ' — powierzchnia';
     $('podpowiedz').textContent = !gra || sklepOtwarty ? '' : linaCzas > 0.2 ? 'Wciągam linę…'
-        : DOTYK ? '' : przySklepie() ? 'E — skup i sklep' : player.onLadder ? 'Spacja — w górę, Shift — w dół'
+        : DOTYK ? '' : przySklepie() ? 'E — skup i sklep' : maSzyb() ? 'E — szyb (winda, wózek)' : player.onLadder ? 'Spacja — w górę, Shift — w dół'
             : wybrany ? 'Lewy przycisk myszy — postaw' : '';
-    if (DOTYK) $('d-sklep').hidden = !przySklepie();
+    if (DOTYK) { $('d-sklep').hidden = !przySklepie() && !maSzyb(); $('d-sklep').textContent = przySklepie() ? 'Sklep' : 'Szyb'; }
     if (performance.now() > komunikatDo) $('komunikat').style.opacity = 0;
 
     renderer.clear();
@@ -703,6 +814,7 @@ window.__gra = {
     get stan() { return stan; }, get player() { return player; }, get kopalnia() { return kopalnia; },
     start() { bezMyszy = true; zlapMysz(); }, palce, dotyk: DOTYK, wybierz, postaw, zapisz,
     get pochodnie() { return pochodnie; }, get oddech() { return oddech; }, get spadki() { return spadki.length + lecace.length; },
-    get przeplyw() { return !!przeplyw; }, kop(x, y, z) { zmienBlok(x, y, z, AIR); poWstrzasie(x, y, z); sprawdzWode(x, y, z); }, komenda: wykonajKomende, otworzSklep,
+    get przeplyw() { return !!przeplyw; }, kop(x, y, z) { zmienBlok(x, y, z, AIR); sprzatnijOsierocone(x, y, z, 1); poWstrzasie(x, y, z); sprawdzWode(x, y, z); },
+    akcjaE, get lonty() { return lonty.length; }, komenda: wykonajKomende, otworzSklep,
     mysz(v) { myszWcisnieta = v; }, klawisz(k, v) { v ? klawisze.add(k) : klawisze.delete(k); }
 };

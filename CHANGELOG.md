@@ -1,5 +1,21 @@
 # Zmiany
 
+## 0.5.0
+
+- Stemple: postawione pod kruchym stropem podpierają go (można je
+  stawiać jeden na drugim).
+- Dynamit: po 3,5 s wysadza każdą skałę w promieniu 2 bloków, także
+  taką, której kilof jeszcze nie rusza. Rudy, które kilof ruszy, trafiają
+  do plecaka; twardsze zostają w ścianie. Wybuch zrywa kruche stropy
+  i powala górnika, który stoi za blisko.
+- Wózek: przy szybie wysyła cały plecak na powierzchnię; urobek czeka
+  w skupie i nie przepada przy wypadku.
+- Winda: przy szybie przewozi na wybrany poziom i z powrotem.
+- Dwie nowe kopalnie z własnym charakterem: Mokra Sztolnia (zalane
+  dolne poziomy, dużo miedzi i srebra) i Kruchy Uskok (dużo złota
+  i szmaragdów, bardzo kruche stropy).
+- Pasek wyboru ma 5 pól (klawisze 1-5).
+
 ## 0.4.0
 
 - Lampa ma zapas paliwa: pod ziemią go ubywa, na powierzchni dolewa się

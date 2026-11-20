@@ -18,6 +18,7 @@
    i strata połowy urobku)*
 3. **Więcej do kupienia** — wózek, winda, dynamit, nowe kopalnie
    z własnym charakterem.
+   *(zrobione w 0.5.0, razem ze stemplami)*
 4. **Surowce i minerały** — duże rozszerzenie listy (patrz „Kierunek”),
    razem z tym, do czego służą.
 

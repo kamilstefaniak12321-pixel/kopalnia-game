@@ -12,7 +12,7 @@ const S = TILE;
 // Kolejność w atlasie.
 export const TILE_NAMES = ['trawa_gora', 'trawa_bok', 'ziemia', 'kamien', 'lupek', 'bazalt',
     'lita_skala', 'deski', 'drabina', 'wegiel', 'miedz', 'zelazo', 'srebro', 'zloto',
-    'szmaragd', 'rubin', 'diament', 'pochodnia', 'krucha', 'rumosz'];
+    'szmaragd', 'rubin', 'diament', 'pochodnia', 'krucha', 'rumosz', 'stempel', 'dynamit'];
 export const TILE_INDEX = Object.fromEntries(TILE_NAMES.map((n, i) => [n, i]));
 
 // Gładki szum, który powtarza się co 64 piksele.
@@ -138,6 +138,33 @@ function rumosz() {
     return buf;
 }
 
+function stempel() {
+    // Drewniany słup na całą wysokość pola, z poprzeczkami u góry i dołu.
+    const buf = new Uint8ClampedArray(S * S * 4);
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+        const klin = y < 7 || y >= S - 5;
+        if (!(x >= 24 && x < 40) && !(klin && x >= 12 && x < 52)) continue;
+        let k = 0.85 + vnoise(x * 4 % S, y, 8, 95) * 0.3;
+        if (x === 24 || (klin && x === 12)) k *= 1.2; else if (x === 39 || (klin && x === 51)) k *= 0.6;
+        if (y === 7 || y === S - 6) k *= 0.6;
+        put(buf, x, y, 156 * k, 112 * k, 64 * k);
+    }
+    return buf;
+}
+function dynamit() {
+    // Trzy czerwone laski związane sznurkiem, z lontem.
+    const buf = new Uint8ClampedArray(S * S * 4);
+    for (let i = 0; i < 3; i++) for (let y = 26; y < S; y++) for (let x = 17 + i * 10; x < 27 + i * 10; x++) {
+        const lx = x - 17 - i * 10;
+        let k = lx === 0 ? 0.6 : lx < 3 ? 1.25 : lx > 7 ? 0.7 : 1;
+        if (y === 26 || y === S - 1) k *= 0.6;
+        if (y >= 40 && y < 45) put(buf, x, y, 214 * k * 0.9, 190 * k * 0.9, 130 * k * 0.9); else put(buf, x, y, 204 * k, 40 * k, 34 * k);
+    }
+    for (let y = 12; y < 26; y++) { const x = 31 + Math.round(Math.sin(y * 0.7) * 2); put(buf, x, y, 60, 50, 40); put(buf, x + 1, y, 90, 76, 60); }
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, -1], [-1, -1], [2, -1], [1, -2]]) put(buf, 31 + dx, 11 + dy, 255, 210, 80);
+    return buf;
+}
+
 function pochodnia() {
     const buf = new Uint8ClampedArray(S * S * 4);   // przezroczyste tło
     for (let y = 26; y < S; y++) for (let x = 28; x < 36; x++) {           // trzonek
@@ -171,6 +198,8 @@ export function makeTile(name) {
         // Krucha skała ma być widoczna z daleka: jaśniejsza, gęsto spękana.
         case 'krucha': return skala([150, 140, 122], 15, { odcienie: 4, kontrast: 0.45, pekniecia: 0.07, drobinki: 0.06 });
         case 'rumosz': return rumosz();
+        case 'stempel': return stempel();
+        case 'dynamit': return dynamit();
         case 'wegiel': return ruda(kamien(), [30, 30, 36], 101, { ile: 9 });
         case 'miedz': return ruda(kamien(), [214, 120, 62], 102);
         case 'zelazo': return ruda(kamien(), [206, 168, 138], 103);
